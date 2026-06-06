@@ -1,46 +1,108 @@
-# 🌡️ HeatWatch
+# 🌡️ HeatWatch — AI-Powered Heatwave Intelligence & Early Warning Platform
 
-HeatWatch is a real-time heatwave monitoring and alert platform designed to help users stay informed about extreme weather conditions. The application provides live weather data, heat risk analysis, interactive maps, and location-based alerts through a modern and responsive dashboard.
+HeatWatch is a next-generation climate intelligence platform designed to monitor, analyze, and visualize heatwave conditions in real time. By combining live meteorological data, geospatial visualization, and predictive risk assessment, HeatWatch aims to provide actionable insights that help individuals, organizations, and authorities prepare for extreme heat events before they become public health emergencies.
 
-## 🚀 Features
-
-### 📊 Real-Time Weather Monitoring
-
-* Current temperature tracking
-* Humidity monitoring
-* Wind speed analysis
-* Feels-like temperature calculation
-* Weather condition updates
-
-### 🔥 Heat Risk Assessment
-
-* Heatwave detection
-* Risk level classification
-* Early warning alerts
-* Health and safety recommendations
-
-### 🗺️ Interactive Maps
-
-* Location-based weather visualization
-* Regional heat monitoring
-* Interactive map interface using Leaflet
-
-### 📈 Data Visualization
-
-* Temperature trends
-* Weather analytics
-* Interactive charts and graphs
-* Historical weather insights
-
-### 🔐 User Authentication
-
-* Firebase Authentication
-* Secure user login
-* Personalized weather tracking
+As climate change continues to increase the frequency and severity of heatwaves worldwide, HeatWatch serves as a digital early-warning system that transforms raw weather data into meaningful, decision-ready information.
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Vision
+
+To build an intelligent heatwave monitoring ecosystem capable of detecting emerging heat risks, forecasting dangerous conditions, and empowering communities with timely alerts and data-driven recommendations.
+
+---
+
+## ✨ Key Features
+
+### 🔥 Real-Time Heatwave Monitoring
+
+* Live temperature tracking
+* Feels-like temperature analysis
+* Humidity and wind monitoring
+* Dynamic weather condition updates
+
+### 📊 Heat Risk Intelligence Engine
+
+* Automated heat-risk classification
+* Multi-level alert generation
+* Heat severity indicators
+* Context-aware warning system
+
+### 🗺️ Interactive Geospatial Dashboard
+
+* Real-time weather visualization
+* Interactive location-based monitoring
+* Regional heat distribution mapping
+* Geographic risk exploration
+
+### 📈 Advanced Data Analytics
+
+* Historical trend visualization
+* Weather pattern analysis
+* Interactive charts and insights
+* Climate data exploration
+
+### 🔐 Secure User Experience
+
+* Firebase Authentication
+* Personalized monitoring experience
+* Secure access management
+
+### 📱 Responsive Design
+
+* Mobile-friendly interface
+* Cross-platform accessibility
+* Optimized user experience
+
+---
+
+## 🏗️ System Architecture
+
+```text
+User Interface (React + TypeScript)
+            │
+            ▼
+Weather Data Layer
+            │
+            ▼
+Heat Risk Analysis Engine
+            │
+            ▼
+Visualization & Alert System
+            │
+            ▼
+Firebase Authentication & Services
+```
+
+---
+
+## 💡 Innovation Highlights
+
+### Intelligent Heat Risk Assessment
+
+HeatWatch goes beyond displaying weather metrics by interpreting environmental conditions and translating them into actionable heat-risk levels.
+
+### Climate-Tech Focus
+
+Unlike traditional weather applications, HeatWatch is specifically designed to address one of the fastest-growing climate challenges: extreme heat events and their impact on public health.
+
+### Data-to-Decision Workflow
+
+The platform converts complex weather information into understandable insights, enabling faster decision-making for users and stakeholders.
+
+### Scalable Early Warning Framework
+
+The architecture is designed to support future integration with:
+
+* AI-based heatwave prediction models
+* Satellite weather feeds
+* Public alert systems
+* Disaster management platforms
+* Smart city infrastructure
+
+---
+
+## 🛠️ Technology Stack
 
 ### Frontend
 
@@ -49,47 +111,34 @@ HeatWatch is a real-time heatwave monitoring and alert platform designed to help
 * Vite
 * React Router DOM
 
-### Visualization & Maps
+### Data Visualization
 
 * Recharts
 * Leaflet
 * React Leaflet
 
-### Backend Services
+### Cloud & Authentication
 
 * Firebase Authentication
-* Firebase Hosting (optional)
+* Firebase Services
 
-### UI Components
+### UI & Design
 
-* Lucide React Icons
-
----
-
-## 📂 Project Structure
-
-src/
-├── components/
-├── pages/
-├── context/
-├── lib/
-│ └── firebase.ts
-├── services/
-├── hooks/
-└── App.tsx
+* Lucide React
+* Responsive Component Architecture
 
 ---
 
-## ⚙️ Installation
+## ⚙️ Getting Started
 
-### Clone the repository
+### Clone Repository
 
 ```bash
 git clone https://github.com/S0hini/HeatWatch.git
 cd HeatWatch
 ```
 
-### Install dependencies
+### Install Dependencies
 
 ```bash
 npm install
@@ -97,7 +146,7 @@ npm install
 
 ### Configure Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the root directory:
 
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
@@ -108,7 +157,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 ```
 
-### Run the development server
+### Run Locally
 
 ```bash
 npm run dev
@@ -116,27 +165,59 @@ npm run dev
 
 ---
 
-## 🌍 Future Enhancements
+## 🔮 Future Roadmap
 
-* AI-based heatwave prediction
-* Push notifications
-* Satellite data integration
-* District-wise heat risk forecasting
-* Emergency response recommendations
-* Mobile application support
+### AI & Machine Learning
+
+* Heatwave forecasting models
+* Predictive climate analytics
+* Risk prediction using historical weather patterns
+
+### Smart Alerts
+
+* Location-based notifications
+* Personalized heat-risk alerts
+* Emergency escalation system
+
+### Public Safety Integration
+
+* Government dashboard integration
+* Disaster management support
+* Community alert networks
+
+### Advanced Climate Intelligence
+
+* Satellite imagery integration
+* Urban heat island analysis
+* Environmental impact assessment
 
 ---
 
-## 👩‍💻 Author
+## 🌍 Potential Impact
+
+HeatWatch has the potential to support:
+
+* Public health awareness
+* Climate resilience initiatives
+* Urban planning decisions
+* Disaster preparedness programs
+* Smart city ecosystems
+
+By providing accessible and actionable climate intelligence, HeatWatch contributes toward building safer and more climate-resilient communities.
+
+---
+
+## 👩‍💻 Developer
 
 **Sohini Das**
 
-B.Tech CSE Student | AI & Full-Stack Development Enthusiast
+Computer Science & Engineering Student
+AI • Full-Stack Development • Computer Vision • Climate-Tech
 
 GitHub: https://github.com/S0hini
 
 ---
 
-## 📜 License
+## 📄 License
 
-This project is developed for educational, research, and demonstration purposes.
+This project is released for educational, research, and innovation purposes.
