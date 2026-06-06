@@ -1,108 +1,11 @@
-import { useState, useEffect } from 'react';
-import {
-  Thermometer, Droplets, Wind, Sun, Activity,
-  TrendingUp, Clock, AlertTriangle, ChevronDown
-} from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine
-} from 'recharts';
-import {
-  generateHourlyData, zones,
-  riskConfig, type RiskLevel
-} from '../lib/mockData';
-import { useZone } from '../contexts/ZoneContext';
-
-const now = new Date();
-
-interface StatCardProps {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  unit: string;
-  sub?: string;
-  accent?: string;
-}
-
-function StatCard({ icon: Icon, label, value, unit, sub, accent = '#f97316' }: StatCardProps) {
-  return (
-    <div className="glass-card-hover p-5 cursor-default">
-      <div className="flex items-center justify-between mb-4">
-        <span className="mono-label">{label}</span>
-        <div className="w-7 h-7 rounded-lg bg-surface-800 flex items-center justify-center">
-          <Icon className="w-3.5 h-3.5" style={{ color: accent }} />
-        </div>
-      </div>
-      <div className="flex items-end gap-1 leading-none mb-3">
-        <span className="stat-value">{value}</span>
-        <span className="stat-unit mb-1">{unit}</span>
-      </div>
-      {sub && <div className="text-[11.5px] text-surface-500">{sub}</div>}
-    </div>
-  );
-}
-
-function HeatBadge({ risk }: { risk: RiskLevel }) {
-  const cfg = riskConfig[risk];
-  const pulsing = risk === 'Extreme' || risk === 'High';
-
-  return (
-    <div className={`relative flex flex-col items-center justify-center p-8 rounded-2xl border ${cfg.bg} ${cfg.border} overflow-hidden h-full`}>
-      {pulsing && (
-        <div className={`absolute inset-0 ${cfg.bg} animate-pulse-slow rounded-2xl`} />
-      )}
-      <div className="relative z-10 flex flex-col items-center gap-4">
-        <AlertTriangle className={`w-8 h-8 ${cfg.text}`} />
-        <div className="text-center">
-          <div className="mono-label mb-2">Heat Risk Level</div>
-          <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-               className={`font-semibold text-5xl tracking-tight ${cfg.text}`}>
-            {risk}
-          </div>
-        </div>
-        <div className={`flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider ${cfg.text} opacity-70`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${pulsing ? 'animate-pulse' : ''}`} />
-          {risk === 'Extreme' && 'Seek shelter immediately'}
-          {risk === 'High'    && 'Limit outdoor exposure'}
-          {risk === 'Moderate'&& 'Take precautions'}
-          {risk === 'Low'     && 'Conditions safe'}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CustomTooltip({ active, payload, label }: {
-  active?: boolean;
-  payload?: { value: number; name: string }[];
-  label?: string
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-surface-800 border border-surface-700/60 rounded-xl px-4 py-3">
-      <p className="mono-label mb-2">{label}</p>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2 text-sm">
-          <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-xl text-heat-200 leading-none">{p.value}°</span>
-          <span className="text-surface-500 text-[11px] font-mono uppercase tracking-wider">{p.name}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function Dashboard() {
-  const [time, setTime]             = useState(now);
-  const [hovered, setHovered]       = useState(false);
-  const [cycleIndex, setCycleIndex] = useState(0);
+  const [time, setTime] = useState(now);
 
   const { selectedZone: lockedZone, setSelectedZoneIndex } = useZone();
   const [localIndex, setLocalIndex] = useState(zones.indexOf(lockedZone));
 
-  const activeZone = hovered
-    ? zones[(localIndex + cycleIndex + 1) % zones.length]
-    : zones[localIndex];
+  // activeZone is always the locked one — no hover preview
+  const activeZone = zones[localIndex];
 
   const hourlyData       = generateHourlyData(activeZone);
   const currentHour      = now.getHours();
@@ -121,21 +24,6 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (!hovered) { setCycleIndex(0); return; }
-    const id = setInterval(() => {
-      setCycleIndex(prev => (prev + 1) % (zones.length - 1));
-    }, 600);
-    return () => clearInterval(id);
-  }, [hovered]);
-
-  const handleZoneClick = () => {
-    const idx = zones.indexOf(activeZone);
-    setLocalIndex(idx);
-    setSelectedZoneIndex(idx);
-    setHovered(false);
-  };
-
   const timeStr = time.toLocaleTimeString('en-IN', {
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   });
@@ -150,23 +38,16 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8
                       pb-6 border-b border-surface-700/40">
         <div>
+          {/* Static zone name — no hover */}
           <h1 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               className="font-light text-5xl tracking-tight text-heat-50 leading-none mb-2 flex items-end gap-3">
-            <span
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => setHovered(false)}
-              onClick={handleZoneClick}
-              className="cursor-pointer border-b border-dashed border-heat-600/40
-                         hover:border-heat-400 hover:text-heat-300
-                         transition-all duration-200 flex items-center gap-2"
-              title="Hover to browse zones, click to select"
-            >
+            <span className="flex items-center gap-2">
               {activeZone.name}
-              <ChevronDown className="w-5 h-5 text-surface-500 mb-1" />
             </span>
             <em className="italic text-surface-500 text-4xl">UHI Monitor</em>
           </h1>
 
+          {/* Zone pills — only interaction point */}
           <div className="flex flex-wrap gap-1.5 mt-3">
             {zones.map((z, i) => (
               <button
@@ -174,11 +55,10 @@ export default function Dashboard() {
                 onClick={() => {
                   setLocalIndex(i);
                   setSelectedZoneIndex(i);
-                  setHovered(false);
                 }}
                 className={`font-mono text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full
                             border transition-all duration-150 ${
-                  localIndex === i && !hovered
+                  localIndex === i
                     ? 'border-heat-500/60 text-heat-300 bg-heat-600/15'
                     : 'border-surface-700/60 text-surface-500 hover:text-heat-300 hover:border-heat-600/40'
                 }`}
@@ -211,11 +91,11 @@ export default function Dashboard() {
       {/* ── Stat Cards ── */}
       <div className="mono-label mb-4">01 — Current Conditions · {activeZone.name}</div>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
-        <StatCard icon={Thermometer} label="Temperature" value={String(Math.round(liveTemp))}  unit="°C"    sub={`${activeZone.risk} risk zone`}             accent="#f97316" />
-        <StatCard icon={Activity}    label="Feels Like"  value={String(Math.round(liveFeels))} unit="°C"    sub="Heat index adjusted"                         accent="#ef4444" />
-        <StatCard icon={Droplets}    label="Humidity"    value={String(activeZone.humidity)}   unit="%"     sub="Zone moisture level"                         accent="#60a5fa" />
+        <StatCard icon={Thermometer} label="Temperature" value={String(Math.round(liveTemp))}  unit="°C"    sub={`${activeZone.risk} risk zone`}          accent="#f97316" />
+        <StatCard icon={Activity}    label="Feels Like"  value={String(Math.round(liveFeels))} unit="°C"    sub="Heat index adjusted"                      accent="#ef4444" />
+        <StatCard icon={Droplets}    label="Humidity"    value={String(activeZone.humidity)}   unit="%"     sub="Zone moisture level"                      accent="#60a5fa" />
         <StatCard icon={Sun}         label="UV Index"    value={String(activeZone.concreteRatio > 70 ? 9 : activeZone.greenCover > 25 ? 6 : 8)} unit="/11" sub="Surface adjusted" accent="#fbbf24" />
-        <StatCard icon={Wind}        label="Green Cover" value={String(activeZone.greenCover)} unit="%"     sub={`Concrete: ${activeZone.concreteRatio}%`}    accent="#34d399" />
+        <StatCard icon={Wind}        label="Green Cover" value={String(activeZone.greenCover)} unit="%"     sub={`Concrete: ${activeZone.concreteRatio}%`} accent="#34d399" />
       </div>
 
       {/* ── Chart + Risk Badge ── */}
@@ -280,7 +160,6 @@ export default function Dashboard() {
                     const idx = zones.indexOf(zone);
                     setLocalIndex(idx);
                     setSelectedZoneIndex(idx);
-                    setHovered(false);
                   }}
                 >
                   <div className="w-24 shrink-0">
