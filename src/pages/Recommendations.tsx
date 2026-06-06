@@ -2,7 +2,8 @@ import {
   User, Building2, AlertTriangle, Droplets, Umbrella,
   TreePine, Waves, Wind, Home, MapPin, Clock, Phone
 } from 'lucide-react';
-import { currentConditions, zones, coolingCenters, riskConfig, type RiskLevel } from '../lib/mockData';
+import { zones, coolingCenters, riskConfig, generateHourlyData, type RiskLevel } from '../lib/mockData';
+import { useZone } from '../contexts/ZoneContext';
 
 interface RecCard {
   icon: React.ElementType;
@@ -39,10 +40,7 @@ function RecommendationCard({ icon: Icon, title, body, urgency = 'normal' }: Rec
 }
 
 function SectionHeader({
-  icon: Icon,
-  title,
-  badge,
-  badgeColor,
+  icon: Icon, title, badge, badgeColor,
 }: {
   icon: React.ElementType;
   title: string;
@@ -63,41 +61,54 @@ function SectionHeader({
 }
 
 export default function Recommendations() {
+  const { selectedZone } = useZone();
+  const now          = new Date();
+  const hourlyData   = generateHourlyData(selectedZone);
+  const liveTemp     = hourlyData[now.getHours()]?.temp     ?? selectedZone.temperature;
+  const liveFeels    = hourlyData[now.getHours()]?.feelsLike ?? selectedZone.feelsLike;
+
   const risk: RiskLevel =
-    currentConditions.temperature >= 42 ? 'Extreme' :
-    currentConditions.temperature >= 38 ? 'High' :
-    currentConditions.temperature >= 34 ? 'Moderate' : 'Low';
+    liveTemp >= 42 ? 'Extreme' :
+    liveTemp >= 38 ? 'High'    :
+    liveTemp >= 34 ? 'Moderate': 'Low';
 
   const cfg = riskConfig[risk];
   const isExtremeOrHigh = risk === 'Extreme' || risk === 'High';
-
-  const hotZones = zones.filter((z) => z.risk === 'Extreme' || z.risk === 'High');
-  const coolZone = zones.find((z) => z.risk === 'Low' || z.risk === 'Moderate');
+  const hotZones = zones.filter(z => z.risk === 'Extreme' || z.risk === 'High');
+  const coolZone = zones.find(z => z.risk === 'Low' || z.risk === 'Moderate');
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-10">
+
       {/* Header */}
       <div>
-        <h1 className="font-display font-bold text-3xl text-heat-50 mb-1">Recommendations</h1>
-        <p className="text-surface-400 text-sm">Dynamic guidance based on current heat conditions in Kolkata</p>
+        <h1 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+            className="font-light text-5xl tracking-tight text-heat-50 leading-none mb-2">
+          Recommendations
+          <em className="italic text-surface-500 ml-3 text-4xl">for {selectedZone.name}</em>
+        </h1>
+        <p className="mono-label mt-2">Dynamic guidance based on current heat conditions</p>
       </div>
 
       {/* Condition banner */}
-      <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4`}>
+      <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-5 flex flex-col sm:flex-row
+                       items-start sm:items-center justify-between gap-4`}>
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl ${cfg.bg} border ${cfg.border}`}>
             <AlertTriangle className={`w-6 h-6 ${cfg.text}`} />
           </div>
           <div>
-            <p className={`font-display font-bold text-lg ${cfg.text}`}>
-              {risk} Heat Alert — Kolkata
+            <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+               className={`font-semibold text-2xl tracking-tight ${cfg.text}`}>
+              {risk} Heat Alert — {selectedZone.name}
             </p>
-            <p className="text-sm text-surface-400">
-              {currentConditions.temperature}°C · Feels like {currentConditions.feelsLike}°C · {currentConditions.humidity}% humidity
+            <p className="text-sm text-surface-400 mt-0.5">
+              {Math.round(liveTemp)}°C · Feels like {Math.round(liveFeels)}°C · {selectedZone.humidity}% humidity · {selectedZone.surface} surface
             </p>
           </div>
         </div>
-        <div className={`text-xs ${cfg.text} border ${cfg.border} rounded-xl px-4 py-2 shrink-0`}>
+        <div className={`font-mono text-[10px] uppercase tracking-wider ${cfg.text}
+                         border ${cfg.border} rounded-xl px-4 py-2 shrink-0`}>
           Updated just now
         </div>
       </div>
@@ -159,7 +170,14 @@ export default function Recommendations() {
           badgeColor="bg-heat-600/20 text-heat-400"
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {hotZones.map((zone) => (
+          {/* Zone-specific recommendation */}
+          <RecommendationCard
+            icon={TreePine}
+            title={`Intervention for ${selectedZone.name}`}
+            body={selectedZone.recommendation}
+            urgency={isExtremeOrHigh ? 'critical' : 'warning'}
+          />
+          {hotZones.filter(z => z.id !== selectedZone.id).map((zone) => (
             <RecommendationCard
               key={zone.id}
               icon={TreePine}
@@ -180,18 +198,18 @@ export default function Recommendations() {
             body="Require reflective roofing materials for new construction and major renovations across Esplanade and Park Street commercial districts."
             urgency="normal"
           />
-          {coolZone && (
+          {coolZone && coolZone.id !== selectedZone.id && (
             <RecommendationCard
               icon={MapPin}
               title={`Replicate ${coolZone.name} Model`}
-              body={`${coolZone.name}'s ${coolZone.greenCover}% green cover keeps temperatures ${currentConditions.temperature - coolZone.temperature}°C below the city average. Enforce its planning standards citywide.`}
+              body={`${coolZone.name}'s ${coolZone.greenCover}% green cover keeps temperatures ${Math.round(liveTemp - coolZone.temperature)}°C below ${selectedZone.name}. Enforce its planning standards citywide.`}
               urgency="normal"
             />
           )}
         </div>
       </section>
 
-      {/* Alerts — cooling centers */}
+      {/* Alerts */}
       <section>
         <SectionHeader
           icon={AlertTriangle}
@@ -204,10 +222,12 @@ export default function Recommendations() {
           <>
             <div className="bg-ember-600/10 border border-ember-600/30 rounded-2xl p-5 mb-5">
               <p className="text-sm text-ember-300 font-medium mb-1">
-                Heat Emergency in Effect
+                Heat Emergency in Effect — {selectedZone.name}
               </p>
               <p className="text-xs text-surface-400">
-                Temperatures above 38°C with high humidity create Extreme Danger conditions. Visit your nearest cooling center immediately if you feel unwell.
+                Temperatures above {Math.round(liveTemp)}°C with {selectedZone.humidity}% humidity create{' '}
+                {risk === 'Extreme' ? 'Extreme Danger' : 'Danger'} conditions. Visit your nearest cooling center
+                immediately if you feel unwell.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -222,12 +242,10 @@ export default function Recommendations() {
                       <p className="text-xs text-surface-400 mb-2">{center.address} · {center.zone}</p>
                       <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                          <Clock className="w-3 h-3" />
-                          {center.open}
+                          <Clock className="w-3 h-3" />{center.open}
                         </span>
                         <span className="flex items-center gap-1.5 text-xs text-amber-400">
-                          <Phone className="w-3 h-3" />
-                          Call 108
+                          <Phone className="w-3 h-3" />Call 108
                         </span>
                       </div>
                     </div>
@@ -241,11 +259,14 @@ export default function Recommendations() {
             <div className="w-12 h-12 bg-emerald-500/15 rounded-full flex items-center justify-center mx-auto mb-3">
               <AlertTriangle className="w-6 h-6 text-emerald-400" />
             </div>
-            <p className="text-heat-200 font-medium mb-1">No Active Alerts</p>
-            <p className="text-surface-500 text-sm">Conditions are within safe thresholds. Continue monitoring.</p>
+            <p className="text-heat-200 font-medium mb-1">No Active Alerts for {selectedZone.name}</p>
+            <p className="text-surface-500 text-sm">
+              {selectedZone.name} is at {risk} risk with {Math.round(liveTemp)}°C. Continue monitoring.
+            </p>
           </div>
         )}
       </section>
+
     </div>
   );
 }

@@ -1,8 +1,53 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import { MapPin, Thermometer, Layers, TreePine, Building2, Droplets } from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { zones, riskConfig, type Zone } from '../lib/mockData';
 
+// ── Heat layer component ──────────────────────────────────────────────────────
+function HeatLayer() {
+  const map = useMap();
+
+  useEffect(() => {
+    // Dynamically import leaflet.heat to avoid SSR issues
+    import('leaflet.heat').then(() => {
+      const heatPoints = zones.map(z => {
+        // Normalize temperature to 0–1 intensity
+        const minTemp = Math.min(...zones.map(z => z.temperature));
+        const maxTemp = Math.max(...zones.map(z => z.temperature));
+        const intensity = (z.temperature - minTemp) / (maxTemp - minTemp);
+        return [z.lat, z.lng, intensity] as [number, number, number];
+      });
+
+      // @ts-ignore — leaflet.heat extends L
+      const heatLayer = (L as any).heatLayer(heatPoints, {
+        radius:  55,
+        blur:    40,
+        maxZoom: 14,
+        max:     1.0,
+        gradient: {
+          0.0:  '#10b981', // cool  → emerald
+          0.25: '#f59e0b', // moderate → amber
+          0.55: '#f97316', // high  → orange
+          0.80: '#ea580c', // high+ → deep orange
+          1.0:  '#dc2626', // extreme → red
+        },
+      });
+
+      heatLayer.addTo(map);
+
+      // Cleanup on unmount
+      return () => {
+        map.removeLayer(heatLayer);
+      };
+    });
+  }, [map]);
+
+  return null;
+}
+
+// ── FlyToZone (unchanged) ─────────────────────────────────────────────────────
 function FlyToZone({ zone }: { zone: Zone | null }) {
   const map = useMap();
   const prevZone = useRef<Zone | null>(null);
@@ -17,6 +62,7 @@ function FlyToZone({ zone }: { zone: Zone | null }) {
   return null;
 }
 
+// ── ZoneSidebar (unchanged) ───────────────────────────────────────────────────
 function ZoneSidebar({
   selected,
   onSelect,
@@ -75,6 +121,7 @@ function ZoneSidebar({
   );
 }
 
+// ── ZonePopupContent (unchanged) ──────────────────────────────────────────────
 function ZonePopupContent({ zone }: { zone: Zone }) {
   const cfg = riskConfig[zone.risk];
   return (
@@ -114,12 +161,9 @@ function ZonePopupContent({ zone }: { zone: Zone }) {
   );
 }
 
+// ── Main ZoneMap ──────────────────────────────────────────────────────────────
 export default function ZoneMap() {
   const [selected, setSelected] = useState<Zone | null>(null);
-
-  const handleSelect = (zone: Zone) => {
-    setSelected(zone);
-  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-0 h-[calc(100vh-64px)] overflow-hidden animate-fade-in">
@@ -135,7 +179,13 @@ export default function ZoneMap() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+
+          {/* 🔥 Heat diffusion layer — sits between tiles and markers */}
+          <HeatLayer />
+
           <FlyToZone zone={selected} />
+
+          {/* CircleMarkers on top of heat layer */}
           {zones.map((zone) => (
             <CircleMarker
               key={zone.id}
@@ -147,7 +197,7 @@ export default function ZoneMap() {
                 fillOpacity: selected?.id === zone.id ? 0.55 : 0.35,
                 weight: selected?.id === zone.id ? 3 : 2,
               }}
-              eventHandlers={{ click: () => handleSelect(zone) }}
+              eventHandlers={{ click: () => setSelected(zone) }}
             >
               <Popup maxWidth={260}>
                 <ZonePopupContent zone={zone} />
@@ -156,7 +206,7 @@ export default function ZoneMap() {
           ))}
         </MapContainer>
 
-        {/* Map overlay legend */}
+        {/* Legend overlay (unchanged) */}
         <div className="absolute bottom-4 left-4 z-[1000] glass-card px-4 py-3 text-xs space-y-1.5">
           <div className="text-surface-400 font-medium mb-2 uppercase tracking-wider text-[10px]">Risk Legend</div>
           {(['Low', 'Moderate', 'High', 'Extreme'] as const).map((level) => {
@@ -170,7 +220,7 @@ export default function ZoneMap() {
           })}
         </div>
 
-        {/* Kolkata label */}
+        {/* Kolkata label (unchanged) */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] glass-card px-4 py-2 flex items-center gap-2">
           <Thermometer className="w-4 h-4 text-heat-400" />
           <span className="text-sm font-medium text-heat-200">Kolkata Metropolitan Area</span>
@@ -178,7 +228,7 @@ export default function ZoneMap() {
       </div>
 
       {/* Sidebar */}
-      <ZoneSidebar selected={selected} onSelect={handleSelect} />
+      <ZoneSidebar selected={selected} onSelect={setSelected} />
     </div>
   );
 }

@@ -155,32 +155,34 @@ export const zones: Zone[] = [
   },
 ];
 
-export const hourlyData: HourlyData[] = [
-  { hour: '12 AM', temp: 32, feelsLike: 36 },
-  { hour: '1 AM',  temp: 31, feelsLike: 35 },
-  { hour: '2 AM',  temp: 30, feelsLike: 34 },
-  { hour: '3 AM',  temp: 29, feelsLike: 33 },
-  { hour: '4 AM',  temp: 29, feelsLike: 33 },
-  { hour: '5 AM',  temp: 30, feelsLike: 34 },
-  { hour: '6 AM',  temp: 31, feelsLike: 35 },
-  { hour: '7 AM',  temp: 33, feelsLike: 38 },
-  { hour: '8 AM',  temp: 35, feelsLike: 40 },
-  { hour: '9 AM',  temp: 36, feelsLike: 42 },
-  { hour: '10 AM', temp: 37, feelsLike: 43 },
-  { hour: '11 AM', temp: 38, feelsLike: 44 },
-  { hour: '12 PM', temp: 38, feelsLike: 44 },
-  { hour: '1 PM',  temp: 39, feelsLike: 45 },
-  { hour: '2 PM',  temp: 40, feelsLike: 47 },
-  { hour: '3 PM',  temp: 40, feelsLike: 47 },
-  { hour: '4 PM',  temp: 39, feelsLike: 45 },
-  { hour: '5 PM',  temp: 38, feelsLike: 44 },
-  { hour: '6 PM',  temp: 37, feelsLike: 43 },
-  { hour: '7 PM',  temp: 36, feelsLike: 41 },
-  { hour: '8 PM',  temp: 35, feelsLike: 40 },
-  { hour: '9 PM',  temp: 34, feelsLike: 38 },
-  { hour: '10 PM', temp: 33, feelsLike: 37 },
-  { hour: '11 PM', temp: 32, feelsLike: 36 },
-];
+export const generateHourlyData = (zone: Zone): HourlyData[] => {
+  return Array.from({ length: 24 }, (_, h) => {
+    const hour =
+      h === 0 ? '12 AM' :
+      h < 12 ? `${h} AM` :
+      h === 12 ? '12 PM' :
+      `${h - 12} PM`;
+
+    const peakHour = 14;
+    const variation = Math.cos(((h - peakHour) * Math.PI) / 12);
+
+    const amplitude =
+      4 +
+      (zone.concreteRatio / 100) * 4 -
+      (zone.greenCover / 100) * 2;
+
+    const temp = zone.temperature + amplitude * variation;
+    const feelsLike = temp + (zone.humidity / 100) * 6;
+
+    return {
+      hour,
+      temp: Number(temp.toFixed(1)),
+      feelsLike: Number(feelsLike.toFixed(1)),
+    };
+  });
+};
+
+export const hourlyData: HourlyData[] = generateHourlyData(zones[2]);
 
 export const historicalData: HistoricalData[] = [
   { year: '2000', avgTemp: 29.2, uhiIntensity: 1.8 },
