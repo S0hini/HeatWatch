@@ -59,10 +59,16 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-surface-950 flex overflow-hidden">
+    <div className="relative min-h-screen flex overflow-hidden bg-[#070608]">
+      <div
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat bg-fixed"
+        style={{ backgroundImage: "url('/bg.png')" }}
+      />
+      <div className="absolute inset-0 z-[1] bg-[#070608]/35" />
+      <div className="relative z-[2] flex w-full">
       {/* Left panel — hero (unchanged) */}
       <div className="hidden lg:flex lg:w-1/2 xl:w-3/5 relative flex-col justify-between p-12">
-        <div className="absolute inset-0 bg-gradient-to-br from-surface-950 via-surface-900 to-heat-950/20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-surface-950/60 via-surface-900/40 to-heat-950/10" />
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-heat-600/10 rounded-full blur-3xl" />
           <div className="absolute bottom-1/3 right-1/4 w-64 h-64 bg-ember-600/8 rounded-full blur-3xl" />
@@ -295,6 +301,7 @@ export default function Landing() {
           </p>
         </div>
       </div>
+    </div>
     </div>
   );
 }

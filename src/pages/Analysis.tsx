@@ -83,6 +83,16 @@ export default function Analysis() {
   }, [currentHour]);
 
   return (
+    <div className="relative min-h-[calc(100vh-64px)] overflow-hidden bg-[#070608]">
+      {/* Background image */}
+      <div
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat bg-fixed"
+        style={{ backgroundImage: "url('/bg.png')" }}
+      />
+      {/* Dark overlay */}
+      <div className="absolute inset-0 z-[1] bg-[#070608]/35" />
+      {/* Page content */}
+      <div className="relative z-[2]">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-8">
       {/* Header */}
       <div>
@@ -327,6 +337,8 @@ export default function Analysis() {
           Current conditions: {38}°C at {72}% RH —{' '}
           <span className="text-red-400 font-medium">Extreme Danger level</span>
         </p>
+      </div>
+    </div>
       </div>
     </div>
   );

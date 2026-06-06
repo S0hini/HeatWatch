@@ -78,139 +78,135 @@ export default function Recommendations() {
   const coolZone = zones.find(z => z.risk === 'Low' || z.risk === 'Moderate');
 
   return (
+  <div className="relative min-h-[calc(100vh-64px)] overflow-hidden bg-[#070608]">
+    <div
+      className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat bg-fixed"
+      style={{ backgroundImage: "url('/bg.png')" }}
+    />
+    <div className="absolute inset-0 z-[1] bg-[#070608]/35" />
+    <div className="relative z-[2]">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-10">
 
-      {/* Header */}
-      <div>
-        <h1 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            className="font-light text-5xl tracking-tight text-heat-50 leading-none mb-2">
-          Recommendations
-          <em className="italic text-surface-500 ml-3 text-4xl">for {selectedZone.name}</em>
-        </h1>
-        <p className="mono-label mt-2">Dynamic guidance based on current heat conditions</p>
-      </div>
-
-      {/* Condition banner */}
-      <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-5 flex flex-col sm:flex-row
-                       items-start sm:items-center justify-between gap-4`}>
+      {/* Zone Status Banner */}
+      <div className={`rounded-2xl border p-5 flex items-center justify-between gap-4
+        ${cfg.bg} ${cfg.border}`}>
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl ${cfg.bg} border ${cfg.border}`}>
             <AlertTriangle className={`w-6 h-6 ${cfg.text}`} />
           </div>
           <div>
-            <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-               className={`font-semibold text-2xl tracking-tight ${cfg.text}`}>
-              {risk} Heat Alert — {selectedZone.name}
+            <p className="text-xs text-surface-500 uppercase tracking-wider mb-0.5">
+              Current Zone · {selectedZone.name}
             </p>
-            <p className="text-sm text-surface-400 mt-0.5">
-              {Math.round(liveTemp)}°C · Feels like {Math.round(liveFeels)}°C · {selectedZone.humidity}% humidity · {selectedZone.surface} surface
-            </p>
+            <h1 className={`font-display font-bold text-2xl ${cfg.text}`}>
+              {risk} Heat Risk — {Math.round(liveTemp)}°C / Feels {Math.round(liveFeels)}°C
+            </h1>
           </div>
         </div>
-        <div className={`font-mono text-[10px] uppercase tracking-wider ${cfg.text}
-                         border ${cfg.border} rounded-xl px-4 py-2 shrink-0`}>
-          Updated just now
+        <div className="shrink-0 text-right hidden sm:block">
+          <p className="text-xs text-surface-500">Surface</p>
+          <p className="text-sm font-medium text-heat-200">{selectedZone.surface}</p>
         </div>
       </div>
 
-      {/* Individuals */}
-      <section>
+      {/* Personal Safety */}
+      <div>
         <SectionHeader
           icon={User}
-          title="For Individuals"
-          badge="Personal safety and health guidance"
-          badgeColor="bg-blue-500/15 text-blue-400"
+          title="Personal Safety"
+          badge="What you should do right now"
+          badgeColor="bg-ember-600/20 text-ember-400"
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <RecommendationCard
-            icon={Clock}
-            title="Avoid Peak Heat Hours"
-            body="Stay indoors between 11 AM and 4 PM when UV and temperature are at their highest. Plan outdoor activities for early morning or after sunset."
+            icon={Droplets}
+            title="Hydrate Continuously"
+            body="Drink at least 250 ml of water every 20–30 minutes. Avoid alcohol, caffeine, and sugary drinks which accelerate dehydration in high-heat conditions."
             urgency={isExtremeOrHigh ? 'critical' : 'warning'}
           />
           <RecommendationCard
-            icon={Droplets}
-            title="Hydrate Frequently"
-            body="Drink at least 3–4 litres of water daily. Avoid caffeine and alcohol which accelerate dehydration. Carry water when outdoors."
-            urgency={isExtremeOrHigh ? 'critical' : 'normal'}
-          />
-          <RecommendationCard
             icon={Umbrella}
-            title="Wear Protective Clothing"
-            body="Use light-coloured, loose-fitting cotton clothes. Wear a wide-brimmed hat and apply SPF 50+ sunscreen when outdoors."
-            urgency="warning"
+            title="Avoid Peak Sun Hours"
+            body="Stay indoors between 11 AM – 4 PM. If you must go out, wear light-coloured loose clothing, a wide-brim hat, and SPF 50+ sunscreen."
+            urgency={isExtremeOrHigh ? 'warning' : 'normal'}
           />
           <RecommendationCard
             icon={Wind}
-            title="Improve Home Ventilation"
-            body="Close curtains on sun-facing windows during daytime. Use fans and cross-ventilation. Wet curtains improve evaporative cooling by 3–5°C."
+            title="Cool Down Actively"
+            body="Use wet towels on neck and wrists, take cool (not cold) showers, and use fans with cross-ventilation. Avoid ice baths which can cause thermal shock."
             urgency="normal"
           />
           <RecommendationCard
             icon={Home}
-            title="Check on Vulnerable Neighbours"
-            body="Elderly residents, infants, and those with chronic illness face higher risk. Check in on neighbours daily during extreme heat events."
-            urgency={risk === 'Extreme' ? 'critical' : 'warning'}
+            title="Optimise Indoor Environment"
+            body="Close curtains on sun-facing windows. Run air conditioning at 24–26°C for efficiency. If no AC, use ceiling fans and open windows after sunset."
+            urgency="normal"
           />
           <RecommendationCard
-            icon={AlertTriangle}
-            title="Recognize Heat Stroke Signs"
-            body="Symptoms: hot dry skin, confusion, rapid pulse, loss of consciousness. Call 108 immediately. Move victim to cool shade and apply wet cloths."
-            urgency="critical"
+            icon={Phone}
+            title="Know Heat Emergency Signs"
+            body="Watch for confusion, no sweating despite heat, rapid pulse, or fainting — these are signs of heatstroke. Call 108 immediately and move the person to a cool shaded area."
+            urgency={isExtremeOrHigh ? 'critical' : 'normal'}
+          />
+          <RecommendationCard
+            icon={Clock}
+            title="Time Outdoor Activity Wisely"
+            body="Schedule exercise, errands, or walks before 8 AM or after 6 PM. Even brief 10-minute exposures at peak hours can cause cumulative heat stress."
+            urgency="normal"
           />
         </div>
-      </section>
+      </div>
 
-      {/* City Planners */}
-      <section>
+      {/* Urban Planning */}
+      <div>
         <SectionHeader
           icon={Building2}
-          title="For City Planners"
-          badge="Infrastructure and policy interventions"
-          badgeColor="bg-heat-600/20 text-heat-400"
+          title="Urban & Infrastructure Actions"
+          badge="Zone-level interventions to reduce UHI"
+          badgeColor="bg-blue-500/15 text-blue-400"
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {/* Zone-specific recommendation */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <RecommendationCard
             icon={TreePine}
-            title={`Intervention for ${selectedZone.name}`}
-            body={selectedZone.recommendation}
-            urgency={isExtremeOrHigh ? 'critical' : 'warning'}
+            title="Expand Green Cover"
+            body={`${selectedZone.name} has only ${selectedZone.greenCover}% green cover. Planting native shade trees along pavements can reduce surface temperatures by 4–8°C within 5 years.`}
+            urgency={selectedZone.greenCover < 15 ? 'critical' : 'warning'}
           />
-          {hotZones.filter(z => z.id !== selectedZone.id).map((zone) => (
-            <RecommendationCard
-              key={zone.id}
-              icon={TreePine}
-              title={`Plant Trees in ${zone.name}`}
-              body={`${zone.name} has only ${zone.greenCover}% green cover. A 10% increase in urban tree canopy can reduce local temperatures by 1.5–3°C. Target major arterials first.`}
-              urgency="warning"
-            />
-          ))}
           <RecommendationCard
             icon={Waves}
-            title="Add Water Bodies to Industrial Zones"
-            body="Introduce retention ponds and fountains in Howrah and Garden Reach. Water features reduce ambient temperatures up to 4°C within a 100m radius."
+            title="Install Cool Pavements"
+            body="Replace dark asphalt with light-coloured or permeable paving materials. Reflective surfaces can lower ambient air temperature by 2–3°C in dense zones."
             urgency="warning"
           />
           <RecommendationCard
             icon={Building2}
-            title="Cool Roofs Mandate"
-            body="Require reflective roofing materials for new construction and major renovations across Esplanade and Park Street commercial districts."
+            title="Mandate Cool Roofs"
+            body="Enforce white or reflective roofing in new construction permits. Cool roofs can cut indoor temperatures by up to 5°C, reducing AC load and energy use."
             urgency="normal"
           />
-          {coolZone && coolZone.id !== selectedZone.id && (
-            <RecommendationCard
-              icon={MapPin}
-              title={`Replicate ${coolZone.name} Model`}
-              body={`${coolZone.name}'s ${coolZone.greenCover}% green cover keeps temperatures ${Math.round(liveTemp - coolZone.temperature)}°C below ${selectedZone.name}. Enforce its planning standards citywide.`}
-              urgency="normal"
-            />
-          )}
+          <RecommendationCard
+            icon={Droplets}
+            title="Integrate Water Features"
+            body="Fountains, misting systems, and urban ponds lower surrounding air temperatures through evaporative cooling — effective within a 30–50 metre radius."
+            urgency="normal"
+          />
+          <RecommendationCard
+            icon={Wind}
+            title="Improve Street Ventilation"
+            body="Redesign street grids to align with prevailing south-westerly winds. Wind corridors between buildings can reduce felt temperature by 2–4°C."
+            urgency="normal"
+          />
+          <RecommendationCard
+            icon={MapPin}
+            title="Prioritise High-Risk Zones"
+            body={`Zones like ${hotZones.map(z => z.name).join(' and ')} require immediate intervention. Coordinate with KMC for emergency greening and surface treatment.`}
+            urgency="critical"
+          />
         </div>
-      </section>
+      </div>
 
-      {/* Alerts */}
-      <section>
+      {/* Emergency Alerts */}
+      <div>
         <SectionHeader
           icon={AlertTriangle}
           title="Emergency Alerts"
@@ -231,7 +227,9 @@ export default function Recommendations() {
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {coolingCenters.map((center) => (
+              {coolingCenters
+                .filter((center) => center.zone === selectedZone.name)
+                .map((center) => (
                 <div key={center.name} className="glass-card-hover p-5">
                   <div className="flex items-start gap-3">
                     <div className="p-2 bg-ember-600/15 rounded-xl text-ember-400 shrink-0">
@@ -252,6 +250,12 @@ export default function Recommendations() {
                   </div>
                 </div>
               ))}
+              {coolingCenters.filter((center) => center.zone === selectedZone.name).length === 0 && (
+                <div className="glass-card p-5 col-span-2 text-center">
+                  <p className="text-surface-400 text-sm mb-1">No cooling centers listed for {selectedZone.name}.</p>
+                  <p className="text-surface-500 text-xs">Contact KMC helpline or call 108 for nearest available shelter.</p>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -265,8 +269,10 @@ export default function Recommendations() {
             </p>
           </div>
         )}
-      </section>
+      </div>
 
     </div>
+    </div>
+  </div>
   );
 }
