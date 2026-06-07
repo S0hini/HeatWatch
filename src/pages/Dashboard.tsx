@@ -10,6 +10,8 @@ import {
   MapPin,
   Loader2,
   AlertTriangle,
+  Search,
+  X,
 } from 'lucide-react';
 import {
   LineChart,
@@ -137,21 +139,43 @@ async function fetchCityWeather(city: { name: string; lat: number; lon: number }
 
 // ── OWM: hourly forecast for user's location ─────────────────────────────────
 async function fetchHourlyForecast(lat: number, lon: number): Promise<HourlyPoint[]> {
-  // Use free 5-day/3hr forecast, interpolate to hourly-ish
-  const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric&cnt=8`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Forecast fetch failed');
-  const d = await res.json();
+  // Prefer One Call API 3.0 for true hourly data (next 48 h, 24 shown)
+  try {
+    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric&exclude=current,minutely,daily,alerts`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OWM One Call ${res.status}`);
+    const d = await res.json();
 
-  return (d.list as any[]).map((item: any) => {
-    const dt   = new Date(item.dt * 1000);
-    const hour = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-    return {
-      hour,
-      temp:      Math.round(item.main.temp),
-      feelsLike: Math.round(item.main.feels_like),
-    };
-  });
+    // Show next 24 hourly slots
+    const slots: any[] = (d.hourly ?? []).slice(0, 24);
+    if (!slots.length) throw new Error('No hourly slots');
+
+    return slots.map((item: any) => {
+      const dt   = new Date(item.dt * 1000);
+      const hour = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return {
+        hour,
+        temp:      Math.round(item.temp),
+        feelsLike: Math.round(item.feels_like),
+      };
+    });
+  } catch {
+    // Fallback: free 5-day / 3-hour forecast (cnt=8 → 24 h at 3-h intervals)
+    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric&cnt=8`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Forecast fetch failed');
+    const d = await res.json();
+
+    return (d.list as any[]).map((item: any) => {
+      const dt   = new Date(item.dt * 1000);
+      const hour = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return {
+        hour,
+        temp:      Math.round(item.main.temp),
+        feelsLike: Math.round(item.main.feels_like),
+      };
+    });
+  }
 }
 
 // ── Geolocation helper ────────────────────────────────────────────────────────
@@ -166,28 +190,131 @@ function getUserLocation(): Promise<{ lat: number; lon: number }> {
   });
 }
 
-// ── Reverse geocode: get best human-readable name for coords ─────────────────
+// ── Reverse geocode via OWM (more reliable than Nominatim for weather context) ─
 async function reverseGeocode(lat: number, lon: number): Promise<string> {
   try {
-    const res  = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&addressdetails=1`,
-      { headers: { 'Accept-Language': 'en' } }
+    // OWM reverse geocoding — same API key, very reliable
+    const res = await fetch(
+      `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OWM_KEY}`
     );
-    const d    = await res.json();
-    const addr = d?.address ?? {};
-    // Priority: village > town > suburb > city_district > city > county
-    return (
-      addr.village        ??
-      addr.town           ??
-      addr.suburb         ??
-      addr.city_district  ??
-      addr.city           ??
-      addr.county         ??
-      'Your Location'
-    );
+    if (!res.ok) throw new Error('OWM reverse geocode failed');
+    const data = await res.json();
+    if (!data?.length) throw new Error('No result');
+    const r = data[0];
+    // Prefer local English name, then name
+    return r.local_names?.en ?? r.name ?? 'Your Location';
   } catch {
-    return 'Your Location';
+    // Fallback: Nominatim
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const d    = await res.json();
+      const addr = d?.address ?? {};
+      return (
+        addr.village ?? addr.town ?? addr.suburb ??
+        addr.city_district ?? addr.city ?? addr.county ?? 'Your Location'
+      );
+    } catch {
+      return 'Your Location';
+    }
   }
+}
+
+// ── OWM: search city by name → geocode → weather ─────────────────────────────
+async function searchCityByName(query: string): Promise<CityWeather> {
+  // Bias toward India by appending ,IN — tries India first, falls back if not found
+  const biasedQuery = query.includes(',') ? query : `${query},IN`;
+  const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(biasedQuery)}&limit=5&appid=${OWM_KEY}`;
+  const geoRes = await fetch(geoUrl);
+  if (!geoRes.ok) throw new Error(`Geocoding error ${geoRes.status}`);
+  const geoData = await geoRes.json();
+
+  // Prefer Indian result; fall back to first result
+  const indiaResult = geoData.find((r: any) => r.country === 'IN') ?? geoData[0];
+  if (!indiaResult) throw new Error(`No results found for "${query}"`);
+
+  const { lat, lon } = indiaResult;
+  // Use local English name if available, else the display name
+  const name = indiaResult.local_names?.en ?? indiaResult.name;
+  // Step 2: Get weather for those exact coords
+  return fetchCityWeather({ name, lat, lon });
+}
+
+// ── Autocomplete via Nominatim — real prefix matching ────────────────────────
+interface GeoSuggestion { name: string; state?: string; country: string; lat: number; lon: number; displayName: string; }
+
+async function fetchSuggestions(query: string): Promise<GeoSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  try {
+    // Nominatim /search supports partial name matching and returns structured results
+    // countrycodes=in biases to India; featureType scopes to cities/towns/villages
+    const params = new URLSearchParams({
+      q,
+      format: 'json',
+      addressdetails: '1',
+      limit: '8',
+      countrycodes: 'in',
+      featuretype: 'city',   // cities, towns, villages
+      'accept-language': 'en',
+      dedupe: '1',
+    });
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+      headers: { 'Accept-Language': 'en' },
+    });
+    if (!res.ok) throw new Error('Nominatim failed');
+    const data: any[] = await res.json();
+
+    const seen = new Set<string>();
+    const results: GeoSuggestion[] = [];
+
+    for (const r of data) {
+      const addr  = r.address ?? {};
+      // Best local name: village > town > city_district > city > name
+      const name  = addr.village ?? addr.town ?? addr.city_district ?? addr.city ?? r.name;
+      const state = addr.state ?? addr.county;
+      const key   = `${name}|${state}`;
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        name,
+        state,
+        country: 'IN',
+        lat: parseFloat(r.lat),
+        lon: parseFloat(r.lon),
+        displayName: [name, state].filter(Boolean).join(', '),
+      });
+    }
+    return results.slice(0, 6);
+  } catch {
+    // Fallback: OWM geocoding (less good for partial, but better than nothing)
+    try {
+      const url = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(q + ',IN')}&limit=5&appid=${OWM_KEY}`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data: any[] = await res.json();
+      return data
+        .filter(r => r.country === 'IN')
+        .map(r => ({
+          name: r.local_names?.en ?? r.name,
+          state: r.state,
+          country: 'IN',
+          lat: r.lat,
+          lon: r.lon,
+          displayName: [r.local_names?.en ?? r.name, r.state].filter(Boolean).join(', '),
+        }));
+    } catch {
+      return [];
+    }
+  }
+}
+
+// ── OWM: current weather for user's exact GPS coords ─────────────────────────
+async function fetchUserLocationWeather(lat: number, lon: number, name: string): Promise<CityWeather> {
+  return fetchCityWeather({ name, lat, lon });
 }
 
 // ── UI Components ─────────────────────────────────────────────────────────────
@@ -280,33 +407,55 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-// ── Ticker strip for city cycling ─────────────────────────────────────────────
-function CityTicker({ cities, activeIdx }: { cities: CityWeather[]; activeIdx: number }) {
+// ── Ticker strip: last 5 fetched cities, clickable, with ALL button ──────────
+function CityTicker({
+  cities,
+  pinnedCity,
+  onCityClick,
+  onAll,
+}: {
+  cities: CityWeather[];
+  pinnedCity: CityWeather | null;
+  onCityClick: (city: CityWeather) => void;
+  onAll: () => void;
+}) {
   if (!cities.length) return null;
-  // Show 5 cities around the active one
-  const count    = cities.length;
-  const visible  = Array.from({ length: Math.min(5, count) }, (_, i) => cities[(activeIdx + i) % count]);
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-      {visible.map((city, i) => {
+    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none items-center">
+      {cities.map((city) => {
         const cfg      = riskConfig[city.risk];
-        const isActive = i === 0;
+        const isActive = pinnedCity?.name === city.name;
         return (
-          <div
-            key={`${city.name}-${i}`}
-            className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-500 ${
+          <button
+            key={city.name}
+            onClick={() => onCityClick(city)}
+            className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95 ${
               isActive
-                ? `${cfg.bg} ${cfg.border} ${cfg.text}`
-                : 'border-orange-500/15 text-orange-300/40 bg-transparent'
+                ? `${cfg.bg} ${cfg.border} ${cfg.text} ring-1 ring-offset-0`
+                : 'border-orange-500/15 text-orange-300/40 bg-transparent hover:border-orange-500/35 hover:text-orange-300/70'
             }`}
+            style={isActive ? { ringColor: cfg.hex } : undefined}
+            title={`Show ${city.name} weather`}
           >
             <MapPin className="w-3 h-3" />
             <span className="text-[10px] font-mono uppercase tracking-wider">{city.name}</span>
             <span className="text-[10px] font-mono font-bold">{city.temperature}°C</span>
-          </div>
+          </button>
         );
       })}
+
+      {/* ALL button — visible when a city is pinned */}
+      {pinnedCity && (
+        <button
+          onClick={onAll}
+          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-500/40 bg-orange-500/15 text-orange-300 text-[10px] font-mono uppercase tracking-wider transition-all duration-300 hover:bg-orange-500/25 hover:text-orange-200 active:scale-95"
+          title="Back to auto-rotating overview"
+        >
+          <X className="w-2.5 h-2.5" />
+          All
+        </button>
+      )}
     </div>
   );
 }
@@ -372,8 +521,32 @@ export default function Dashboard() {
   const [loadingWeather, setLoadingWeather] = useState(false);
   const [loadingHourly,  setLoadingHourly]  = useState(false);
   const [loadingCities,  setLoadingCities]  = useState(true);
+  const [locationDenied, setLocationDenied] = useState(false);
+  const [geoRetryCount,  setGeoRetryCount]  = useState(0);
   const [error,          setError]          = useState<string | null>(null);
   const [overviewLastUpdated, setOverviewLastUpdated] = useState<Date | null>(null);
+
+  // Search state
+  const [searchQuery,      setSearchQuery]      = useState('');
+  const [searchLoading,    setSearchLoading]    = useState(false);
+  const [searchError,      setSearchError]      = useState<string | null>(null);
+  const [searchedCity,     setSearchedCity]     = useState<CityWeather | null>(null);
+  const [searchedHourly,   setSearchedHourly]   = useState<HourlyPoint[]>([]);
+  const [searchLoadingHourly, setSearchLoadingHourly] = useState(false);
+  const [suggestions,      setSuggestions]      = useState<GeoSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [showSuggestions,  setShowSuggestions]  = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // User location current weather (for header badge)
+  const [userLocWeather,   setUserLocWeather]   = useState<CityWeather | null>(null);
+
+  // Recently fetched cities (last 5, in fetch order) + pinned ticker city
+  const [recentCities,     setRecentCities]     = useState<CityWeather[]>([]);
+  const [pinnedCity,       setPinnedCity]       = useState<CityWeather | null>(null);
+  const [pinnedHourly,     setPinnedHourly]     = useState<HourlyPoint[]>([]);
+  const [pinnedHourlyLoading, setPinnedHourlyLoading] = useState(false);
 
   const fetchedCitiesRef  = useRef<Map<string, CityWeather>>(new Map());
   const rotateTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -421,6 +594,10 @@ export default function Dashboard() {
         const exists = prev.find(c => c.name === cached.name);
         return exists ? prev.map(c => c.name === cached.name ? cached : c) : [...prev, cached];
       });
+      setRecentCities(prev => {
+        const filtered = prev.filter(c => c.name !== cached.name);
+        return [cached, ...filtered].slice(0, 5);
+      });
       return;
     }
 
@@ -432,6 +609,10 @@ export default function Dashboard() {
       setCities(prev => {
         const exists = prev.find(c => c.name === weather.name);
         return exists ? prev.map(c => c.name === weather.name ? weather : c) : [...prev, weather];
+      });
+      setRecentCities(prev => {
+        const filtered = prev.filter(c => c.name !== weather.name);
+        return [weather, ...filtered].slice(0, 5);
       });
     } catch {
       // silently skip failed cities
@@ -464,27 +645,51 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       setLoadingHourly(true);
+      setLocationDenied(false);
       try {
-        // Get exact GPS coords
         const loc = await getUserLocation();
 
-        // Reverse geocode with priority: village > town > suburb > city
-        const locName = await reverseGeocode(loc.lat, loc.lon);
-        setUserLocation({ lat: loc.lat, lon: loc.lon, name: locName });
+        // Run reverse geocode + current weather + hourly forecast in parallel
+        const [locName, weather, hourly] = await Promise.allSettled([
+          reverseGeocode(loc.lat, loc.lon),
+          fetchUserLocationWeather(loc.lat, loc.lon, 'Your Location'),
+          fetchHourlyForecast(loc.lat, loc.lon),
+        ]);
 
-        // Fetch hourly forecast using exact GPS coords (not city name)
-        const hourly = await fetchHourlyForecast(loc.lat, loc.lon);
-        setHourlyData(hourly);
-      } catch {
-        // Browser denied geolocation — don't silently fall back to Kolkata,
-        // instead show a friendly message and leave the chart empty
-        setUserLocation({ lat: 0, lon: 0, name: 'Location access denied' });
+        const name = locName.status === 'fulfilled' ? locName.value : 'Your Location';
+        setUserLocation({ lat: loc.lat, lon: loc.lon, name });
+
+        if (weather.status === 'fulfilled') {
+          // Update name on the weather object to match reverse geocode
+          setUserLocWeather({ ...weather.value, name });
+        }
+
+        if (hourly.status === 'fulfilled') {
+          setHourlyData(hourly.value);
+        }
+      } catch (err: any) {
+        const isDenied = err?.code === 1; // PERMISSION_DENIED
+        setLocationDenied(isDenied);
+        setUserLocation({ lat: 0, lon: 0, name: isDenied ? 'Location denied' : 'Location unavailable' });
         setHourlyData([]);
       } finally {
         setLoadingHourly(false);
       }
     })();
-  }, []);
+  }, [geoRetryCount]);
+
+  // ── Refresh user location weather every 15 minutes ───────────────────────
+  useEffect(() => {
+    const FIFTEEN_MIN = 15 * 60 * 1000;
+    const id = setInterval(async () => {
+      if (!userLocation || userLocation.lat === 0) return;
+      try {
+        const w = await fetchUserLocationWeather(userLocation.lat, userLocation.lon, userLocation.name);
+        setUserLocWeather({ ...w, name: userLocation.name });
+      } catch { /* silent */ }
+    }, FIFTEEN_MIN);
+    return () => clearInterval(id);
+  }, [userLocation]);
 
   // ── Refresh hourly forecast every 2 hours ────────────────────────────────
   useEffect(() => {
@@ -530,16 +735,126 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
+  // ── Search handler ────────────────────────────────────────────────────────
+  const handleSearch = useCallback(async (q: string) => {
+    const query = q.trim();
+    if (!query) return;
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchedCity(null);
+    setSearchedHourly([]);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    try {
+      const weather = await searchCityByName(query);
+      setSearchedCity(weather);
+      // Also fetch hourly for the searched city
+      setSearchLoadingHourly(true);
+      try {
+        const hourly = await fetchHourlyForecast(weather.lat, weather.lon);
+        setSearchedHourly(hourly);
+      } catch { /* silent */ } finally {
+        setSearchLoadingHourly(false);
+      }
+    } catch (e: any) {
+      setSearchError(e.message ?? 'City not found');
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  const handleExitSearch = useCallback(() => {
+    setSearchedCity(null);
+    setSearchedHourly([]);
+    setSearchQuery('');
+    setSearchError(null);
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }, []);
+
+  // ── Autocomplete: debounce input → fetch suggestions ──────────────────────
+  const handleSearchInput = useCallback((value: string) => {
+    setSearchQuery(value);
+    setSearchError(null);
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    if (value.trim().length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    setSuggestionsLoading(true);
+    setShowSuggestions(true);
+    suggestDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await fetchSuggestions(value);
+        setSuggestions(results);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 320);
+  }, []);
+
+  const handleSuggestionClick = useCallback(async (suggestion: GeoSuggestion) => {
+    setSearchQuery(suggestion.name);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchedCity(null);
+    setSearchedHourly([]);
+    try {
+      // Use lat/lon directly from suggestion — no second geocode round-trip
+      const weather = await fetchCityWeather({ name: suggestion.name, lat: suggestion.lat, lon: suggestion.lon });
+      setSearchedCity(weather);
+      setSearchLoadingHourly(true);
+      try {
+        const hourly = await fetchHourlyForecast(suggestion.lat, suggestion.lon);
+        setSearchedHourly(hourly);
+      } catch { /* silent */ } finally {
+        setSearchLoadingHourly(false);
+      }
+    } catch (e: any) {
+      setSearchError(e.message ?? 'Failed to fetch weather');
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  // ── Ticker city click: pin that city ─────────────────────────────────────
+  const handleTickerCityClick = useCallback(async (city: CityWeather) => {
+    setPinnedCity(city);
+    setPinnedHourly([]);
+    setPinnedHourlyLoading(true);
+    try {
+      const hourly = await fetchHourlyForecast(city.lat, city.lon);
+      setPinnedHourly(hourly);
+    } catch { /* silent */ } finally {
+      setPinnedHourlyLoading(false);
+    }
+  }, []);
+
+  const handleUnpin = useCallback(() => {
+    setPinnedCity(null);
+    setPinnedHourly([]);
+  }, []);
+
   // ── Derived values ────────────────────────────────────────────────────────
-  const currentHour    = time.getHours();
-  const liveTemp       = activeCity?.temperature ?? null;
+  const isSearchMode   = searchedCity !== null;
+  const isPinnedMode   = pinnedCity !== null && !isSearchMode;
+  const displayCity    = isSearchMode ? searchedCity : isPinnedMode ? pinnedCity : activeCity;
+  const displayHourly  = isSearchMode ? searchedHourly : isPinnedMode ? pinnedHourly : hourlyData;
+  const displayHourlyLoading = isSearchMode ? searchLoadingHourly : isPinnedMode ? pinnedHourlyLoading : loadingHourly;
+
+  const liveTemp       = displayCity?.temperature ?? null;
   const liveRisk: RiskLevel = liveTemp !== null ? getRisk(liveTemp) : 'Low';
+
+  // Header badge always shows user's own location temperature
+  const headerTemp     = userLocWeather?.temperature ?? null;
 
   const timeStr = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const dateStr = time.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  // For the reference line on the chart — match to closest hour label
-  const refHourLabel = hourlyData[0]?.hour;
 
   return (
     <PremiumBackground>
@@ -549,71 +864,182 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 pb-6 border-b border-orange-500/15">
           <div className="flex-1">
             <h1 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }} className="font-light text-5xl tracking-tight text-heat-50 leading-none mb-2 flex items-end gap-3">
-              <span>{activeCity?.name ?? 'West Bengal'}</span>
+              <span>{displayCity?.name ?? (isSearchMode ? '…' : 'West Bengal')}</span>
               <em className="italic text-orange-400/70 text-4xl">UHI Monitor</em>
             </h1>
 
-            {/* City ticker */}
-            <div className="mt-3">
-              {loadingCities ? (
-                <div className="flex items-center gap-2 text-orange-300/40">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span className="text-xs font-mono">Fetching WB cities from OpenStreetMap…</span>
+            {/* City ticker — hide in search mode */}
+            {!isSearchMode && (
+              <div className="mt-3">
+                {loadingCities && recentCities.length === 0 ? (
+                  <div className="flex items-center gap-2 text-orange-300/40">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span className="text-xs font-mono">Fetching WB cities from OpenStreetMap…</span>
+                  </div>
+                ) : (
+                  <CityTicker
+                    cities={recentCities}
+                    pinnedCity={isPinnedMode ? pinnedCity : null}
+                    onCityClick={handleTickerCityClick}
+                    onAll={handleUnpin}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Search mode pill */}
+            {isSearchMode && (
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-300 text-xs font-mono">
+                  <Search className="w-3 h-3" />
+                  Showing search result for "{searchQuery}"
+                  <button
+                    onClick={handleExitSearch}
+                    className="ml-1 flex items-center gap-1 hover:text-orange-100 transition-colors"
+                    title="Back to default dashboard"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              ) : (
-                <CityTicker cities={cities} activeIdx={0} />
-              )}
-            </div>
+              </div>
+            )}
 
             <p className="mono-label mt-3 text-orange-400/70">{dateStr.toUpperCase()}</p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl">
-              <Clock className="w-3.5 h-3.5 text-orange-400/70" />
-              <span className="font-mono text-heat-100 text-[13px]">{timeStr}</span>
+          <div className="flex flex-col items-end gap-2">
+            {/* Search bar with autocomplete */}
+            <div className="relative">
+              <form
+                onSubmit={e => { e.preventDefault(); handleSearch(searchQuery); }}
+                className="flex items-center gap-2"
+              >
+                <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl focus-within:border-orange-500/50 transition-colors">
+                  <Search className="w-3.5 h-3.5 text-orange-400/50 shrink-0" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => handleSearchInput(e.target.value)}
+                    onFocus={() => { if (suggestions.length) setShowSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    placeholder="Search city or town…"
+                    className="bg-transparent text-heat-100 text-[13px] font-mono placeholder-orange-300/25 outline-none w-44"
+                    autoComplete="off"
+                  />
+                  {(searchLoading || suggestionsLoading) && <Loader2 className="w-3.5 h-3.5 text-orange-400 animate-spin shrink-0" />}
+                  {isSearchMode && !searchLoading && (
+                    <button type="button" onClick={handleExitSearch} className="text-orange-400/50 hover:text-orange-400 transition-colors">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={searchLoading || !searchQuery.trim()}
+                  className="flex items-center gap-1.5 bg-orange-500/20 hover:bg-orange-500/30 disabled:opacity-40 border border-orange-500/30 rounded-xl px-3.5 py-2 text-orange-200 text-[13px] font-mono transition-all"
+                >
+                  Go
+                </button>
+              </form>
+
+              {/* Autocomplete dropdown */}
+              {showSuggestions && (
+                <div className="absolute top-full mt-1.5 right-0 z-50 w-full min-w-[260px] bg-[#130c0c]/95 border border-orange-500/25 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden">
+                  {suggestionsLoading && !suggestions.length ? (
+                    <div className="flex items-center gap-2 px-4 py-3 text-orange-300/40">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span className="text-xs font-mono">Searching…</span>
+                    </div>
+                  ) : suggestions.length > 0 ? (
+                    <ul>
+                      {suggestions.map((s, i) => (
+                        <li key={`${s.lat}-${s.lon}`}>
+                          {i > 0 && <div className="h-px bg-orange-500/10 mx-3" />}
+                          <button
+                            type="button"
+                            onMouseDown={() => handleSuggestionClick(s)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-orange-500/10 transition-colors group"
+                          >
+                            <MapPin className="w-3 h-3 text-orange-400/40 group-hover:text-orange-400/70 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] text-heat-100 font-mono truncate">{s.name}</div>
+                              {s.state && (
+                                <div className="text-[10px] text-orange-300/35 font-mono truncate">{s.state} · IN</div>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="px-4 py-3 text-xs text-orange-300/30 font-mono">No results found</div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 bg-orange-500/16 border border-orange-500/30 rounded-xl px-3.5 py-2 backdrop-blur-xl">
-              {loadingWeather
-                ? <Loader2 className="w-3.5 h-3.5 text-orange-400 animate-spin" />
-                : <Thermometer className="w-3.5 h-3.5 text-orange-400" />
-              }
-              <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }} className="font-medium text-orange-200 text-xl leading-none">
-                {liveTemp !== null ? `${liveTemp}°C` : '—'}
-              </span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl">
+                <Clock className="w-3.5 h-3.5 text-orange-400/70" />
+                <span className="font-mono text-heat-100 text-[13px]">{timeStr}</span>
+              </div>
+
+              {/* Location pill — always shows user's own location */}
+              <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl">
+                <MapPin className="w-3.5 h-3.5 text-orange-400/70" />
+                <span className="font-mono text-heat-100 text-[11px] uppercase tracking-wider">
+                  {userLocation && userLocation.lat !== 0 ? userLocation.name : 'Locating…'}
+                </span>
+              </div>
+
+              {/* Temp badge — always shows user's current location temp */}
+              <div className="flex items-center gap-2 bg-orange-500/16 border border-orange-500/30 rounded-xl px-3.5 py-2 backdrop-blur-xl">
+                {!userLocWeather && userLocation === null
+                  ? <Loader2 className="w-3.5 h-3.5 text-orange-400 animate-spin" />
+                  : <Thermometer className="w-3.5 h-3.5 text-orange-400" />
+                }
+                <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }} className="font-medium text-orange-200 text-xl leading-none">
+                  {headerTemp !== null ? `${headerTemp}°C` : '—'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* ── Error banner ── */}
-        {error && (
+        {(error || searchError) && (
           <div className="flex items-center gap-2 mb-6 px-4 py-3 rounded-xl border border-red-700/40 bg-red-950/30 text-red-300 text-xs">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            {error}
+            {searchError ?? error}
           </div>
         )}
 
         {/* ── 01 Current Conditions ── */}
         <div className="mono-label mb-4 text-orange-400/70">
-          01 — Current Conditions · {activeCity?.name ?? '…'}
-          {activeCity && (
-            <span className="ml-3 capitalize text-orange-300/40">{activeCity.description}</span>
+          01 — Current Conditions · {displayCity?.name ?? '…'}
+          {isPinnedMode && <span className="ml-2 text-orange-300/30">(pinned · click All to resume)</span>}
+          {displayCity && (
+            <span className="ml-3 capitalize text-orange-300/40">{displayCity.description}</span>
           )}
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
-          <StatCard icon={Thermometer}  label="Temperature" value={String(liveTemp ?? '—')}                unit="°C" sub={`${liveRisk} risk zone`}   accent="#f97316" loading={loadingWeather} />
-          <StatCard icon={Activity}     label="Feels Like"  value={String(activeCity?.feelsLike ?? '—')}  unit="°C" sub="Heat index adjusted"         accent="#ef4444" loading={loadingWeather} />
-          <StatCard icon={Droplets}     label="Humidity"    value={String(activeCity?.humidity ?? '—')}   unit="%"  sub="Relative humidity"            accent="#60a5fa" loading={loadingWeather} />
-          <StatCard icon={Sun}          label="UV Index"    value={String(activeCity?.uvIndex ?? '—')}    unit="/11" sub="Cloud-adjusted estimate"     accent="#fbbf24" loading={loadingWeather} />
-          <StatCard icon={Wind}         label="Wind Speed"  value={String(activeCity?.windSpeed ?? '—')}  unit="km/h" sub="Surface wind"              accent="#34d399" loading={loadingWeather} />
+          <StatCard icon={Thermometer}  label="Temperature" value={String(liveTemp ?? '—')}                  unit="°C" sub={`${liveRisk} risk zone`}   accent="#f97316" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Activity}     label="Feels Like"  value={String(displayCity?.feelsLike ?? '—')}    unit="°C" sub="Heat index adjusted"         accent="#ef4444" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Droplets}     label="Humidity"    value={String(displayCity?.humidity ?? '—')}     unit="%"  sub="Relative humidity"            accent="#60a5fa" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Sun}          label="UV Index"    value={String(displayCity?.uvIndex ?? '—')}      unit="/11" sub="Cloud-adjusted estimate"     accent="#fbbf24" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Wind}         label="Wind Speed"  value={String(displayCity?.windSpeed ?? '—')}    unit="km/h" sub="Surface wind"              accent="#34d399" loading={isSearchMode ? searchLoading : loadingWeather} />
         </div>
 
         {/* ── 02 Hourly Forecast ── */}
         <div className="mono-label mb-4 text-orange-400/70">
           02 — Hourly Forecast ·{' '}
-          {userLocation
+          {isSearchMode
+            ? <span className="inline-flex items-center gap-1"><Search className="w-3 h-3 inline" /> {searchedCity?.name}</span>
+            : isPinnedMode
+            ? <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 inline" /> {pinnedCity?.name}</span>
+            : userLocation
             ? <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 inline" /> {userLocation.name}</span>
             : loadingHourly ? 'Locating…' : 'Your Location'
           }
@@ -628,7 +1054,7 @@ export default function Dashboard() {
                   Hourly Temperature
                 </h2>
                 <p className="mono-label mt-1 text-orange-400/60">
-                  Next 24h · {userLocation?.name ?? 'loading…'}
+                  Next 24h · {isSearchMode ? (searchedCity?.name ?? 'loading…') : (userLocation?.name ?? 'Acquiring location…')}
                 </p>
               </div>
               <div className="flex items-center gap-4">
@@ -641,26 +1067,39 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {loadingHourly ? (
+            {displayHourlyLoading ? (
               <div className="flex items-center justify-center h-[210px] gap-2 text-orange-300/40">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm">Fetching your location forecast…</span>
+                <span className="text-sm">Fetching forecast…</span>
               </div>
-            ) : hourlyData.length > 0 ? (
+            ) : displayHourly.length > 0 ? (
               <ResponsiveContainer width="100%" height={210}>
-                <LineChart data={hourlyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                <LineChart data={displayHourly} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(249,115,22,0.16)" vertical={false} />
                   <XAxis dataKey="hour" tick={{ fill: 'rgba(251,146,60,0.55)', fontSize: 10, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fill: 'rgba(251,146,60,0.55)', fontSize: 10, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} domain={['dataMin - 2', 'dataMax + 2']} unit="°" />
                   <Tooltip content={<CustomTooltip />} />
-                  {refHourLabel && <ReferenceLine x={refHourLabel} stroke="#f97316" strokeDasharray="3 3" strokeOpacity={0.6} />}
+                  {displayHourly[0]?.hour && <ReferenceLine x={displayHourly[0].hour} stroke="#f97316" strokeDasharray="3 3" strokeOpacity={0.6} />}
                   <Line type="monotone" dataKey="temp"      name="Temperature" stroke="#f97316" strokeWidth={2.3} dot={false} activeDot={{ r: 4, fill: '#f97316', stroke: '#0d0500', strokeWidth: 2 }} />
                   <Line type="monotone" dataKey="feelsLike" name="Feels Like"  stroke="#ef4444" strokeWidth={1.6} strokeDasharray="4 4" dot={false} activeDot={{ r: 3, fill: '#ef4444' }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-[210px] text-orange-300/30 text-sm">
-                No forecast data available
+              <div className="flex flex-col items-center justify-center h-[210px] gap-3 text-orange-300/30 text-sm">
+                {locationDenied && !isSearchMode && !isPinnedMode ? (
+                  <>
+                    <MapPin className="w-6 h-6 text-orange-400/30" />
+                    <span className="text-xs text-center text-orange-300/40">Location access denied.<br/>Enable it in your browser to see your local forecast.</span>
+                    <button
+                      onClick={() => setGeoRetryCount(c => c + 1)}
+                      className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-300 text-xs font-mono hover:bg-orange-500/20 transition-all"
+                    >
+                      <MapPin className="w-3 h-3" /> Retry location
+                    </button>
+                  </>
+                ) : (
+                  <span>No forecast data available</span>
+                )}
               </div>
             )}
           </PremiumCard>

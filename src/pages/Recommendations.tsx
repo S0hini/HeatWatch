@@ -75,7 +75,6 @@ export default function Recommendations() {
   const cfg = riskConfig[risk];
   const isExtremeOrHigh = risk === 'Extreme' || risk === 'High';
   const hotZones = zones.filter(z => z.risk === 'Extreme' || z.risk === 'High');
-  const coolZone = zones.find(z => z.risk === 'Low' || z.risk === 'Moderate');
 
   return (
   <div className="relative min-h-[calc(100vh-64px)] overflow-hidden bg-[#070608]">

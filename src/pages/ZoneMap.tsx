@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
-import { MapPin, Thermometer, Layers, TreePine, Building2, Droplets, RefreshCw, AlertTriangle } from 'lucide-react';
+import { MapPin, Thermometer, Layers, Building2, Droplets, RefreshCw, AlertTriangle } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
