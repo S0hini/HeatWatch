@@ -71,7 +71,7 @@ function PremiumCard({
         group relative
         rounded-2xl
         border border-orange-500/20
-        bg-[#120b0b]/42
+        bg-transparent
         backdrop-blur-md
 
         transition-all duration-300

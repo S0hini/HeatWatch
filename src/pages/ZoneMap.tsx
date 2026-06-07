@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import { MapPin, Thermometer, Layers, TreePine, Building2, Droplets, RefreshCw, AlertTriangle } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -72,7 +72,6 @@ export const riskConfig: Record<RiskLevel, { bg: string; border: string; text: s
 };
 
 // ── OpenWeatherMap fetch ──────────────────────────────────────────────────────
-// Replace with your OWM API key — free tier supports 60 calls/min
 const OWM_API_KEY = import.meta.env.VITE_OWM_API_KEY ?? '';
 
 async function fetchDistrictWeather(district: District): Promise<District> {
@@ -91,46 +90,18 @@ async function fetchDistrictWeather(district: District): Promise<District> {
   return { ...district, temperature, feelsLike, humidity, description, risk, color };
 }
 
-// ── Heat layer ────────────────────────────────────────────────────────────────
-function HeatLayer({ districts }: { districts: District[] }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!districts.length) return;
-    const loaded = districts.filter(d => d.temperature !== undefined);
-    if (!loaded.length) return;
-
-    import('leaflet.heat').then(() => {
-      const temps  = loaded.map(d => d.temperature as number);
-      const minT   = Math.min(...temps);
-      const maxT   = Math.max(...temps);
-      const span   = maxT - minT || 1;
-
-      const heatPoints = loaded.map(d => {
-        const intensity = (d.temperature! - minT) / span;
-        return [d.lat, d.lng, intensity] as [number, number, number];
-      });
-
-      const heatLayer = (L as any).heatLayer(heatPoints, {
-        radius:  70,
-        blur:    55,
-        maxZoom: 10,
-        max:     1.0,
-        gradient: {
-          0.0:  '#10b981',
-          0.25: '#f59e0b',
-          0.55: '#f97316',
-          0.80: '#ea580c',
-          1.0:  '#dc2626',
-        },
-      });
-
-      heatLayer.addTo(map);
-      return () => { map.removeLayer(heatLayer); };
-    });
-  }, [map, districts]);
-
-  return null;
+// ── OWM Temperature raster tile layer — covers the whole world like AccuWeather
+function OWMTempLayer() {
+  const apiKey = import.meta.env.VITE_OWM_API_KEY ?? '';
+  if (!apiKey) return null;
+  return (
+    <TileLayer
+      url={`https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${apiKey}`}
+      attribution='Weather &copy; <a href="https://openweathermap.org">OpenWeatherMap</a>'
+      opacity={0.75}
+      zIndex={200}
+    />
+  );
 }
 
 // ── FlyTo ─────────────────────────────────────────────────────────────────────
@@ -274,11 +245,11 @@ function DistrictPopup({ district }: { district: District }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ZoneMap() {
-  const [districts, setDistricts] = useState<District[]>(WB_DISTRICTS);
-  const [selected,  setSelected]  = useState<District | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [lastFetch, setLastFetch] = useState<Date | null>(null);
+  const [districts,  setDistricts]  = useState<District[]>(WB_DISTRICTS);
+  const [selected,   setSelected]   = useState<District | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [lastFetch,  setLastFetch]  = useState<Date | null>(null);
 
   const fetchAll = async () => {
     if (!OWM_API_KEY) {
@@ -290,27 +261,16 @@ export default function ZoneMap() {
     setLoading(true);
     setError(null);
 
-    // Fetch in small batches to respect free-tier rate limits (60 req/min)
     const BATCH = 10;
-    const updated = [...WB_DISTRICTS];
-
-    for (let i = 0; i < updated.length; i += BATCH) {
-      const batch = updated.slice(i, i + BATCH);
+    const updatedDistricts = [...WB_DISTRICTS];
+    for (let i = 0; i < updatedDistricts.length; i += BATCH) {
+      const batch = updatedDistricts.slice(i, i + BATCH);
       const results = await Promise.allSettled(batch.map(fetchDistrictWeather));
-
       results.forEach((result, idx) => {
-        if (result.status === 'fulfilled') {
-          updated[i + idx] = result.value;
-        }
+        if (result.status === 'fulfilled') updatedDistricts[i + idx] = result.value;
       });
-
-      // Update state after each batch so the UI fills in progressively
-      setDistricts([...updated]);
-
-      // Brief pause between batches
-      if (i + BATCH < updated.length) {
-        await new Promise(r => setTimeout(r, 1100));
-      }
+      setDistricts([...updatedDistricts]);
+      if (i + BATCH < updatedDistricts.length) await new Promise(r => setTimeout(r, 1100));
     }
 
     setLastFetch(new Date());
@@ -334,71 +294,139 @@ export default function ZoneMap() {
       {/* Map */}
       <div className="flex-1 relative">
         <MapContainer
-          // Centred on West Bengal
           center={[23.8, 87.8]}
           zoom={7}
           className="w-full h-full"
           zoomControl={false}
         >
+          <ZoomControl position="bottomright" />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
 
-          <HeatLayer districts={districts} />
+          <OWMTempLayer />
           <FlyToDistrict district={selected} />
 
           {districts
             .filter(d => d.temperature !== undefined)
-            .map((district) => (
-              <CircleMarker
-                key={district.id}
-                center={[district.lat, district.lng]}
-                radius={selected?.id === district.id ? 16 : 10}
-                pathOptions={{
-                  color:       district.color!,
-                  fillColor:   district.color!,
-                  fillOpacity: selected?.id === district.id ? 0.65 : 0.45,
-                  weight:      selected?.id === district.id ? 3 : 1.5,
-                }}
-                eventHandlers={{ click: () => setSelected(district) }}
-              >
-                <Popup maxWidth={260}>
-                  <DistrictPopup district={district} />
-                </Popup>
-              </CircleMarker>
-            ))}
+            .map((district) => {
+              const isSelected = selected?.id === district.id;
+              const icon = L.divIcon({
+                className: '',
+                html: `
+                  <div style="
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: ${isSelected ? 56 : 44}px;
+                    height: ${isSelected ? 56 : 44}px;
+                  ">
+                    <div style="
+                      position: absolute;
+                      inset: 0;
+                      border-radius: 50%;
+                      background: ${district.color}22;
+                      border: ${isSelected ? '2.5px' : '1.5px'} solid ${district.color}99;
+                      box-shadow: 0 0 ${isSelected ? 20 : 10}px ${district.color}55;
+                    "></div>
+                    <div style="
+                      position: relative;
+                      z-index: 1;
+                      text-align: center;
+                      line-height: 1;
+                    ">
+                      <div style="
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: ${isSelected ? '13px' : '11px'};
+                        font-weight: 700;
+                        color: ${district.color};
+                        text-shadow: 0 0 8px ${district.color}88, 0 1px 3px #000;
+                      ">${district.temperature}°</div>
+                      <div style="
+                        font-family: sans-serif;
+                        font-size: 8px;
+                        color: rgba(255,255,255,0.6);
+                        margin-top: 1px;
+                        text-shadow: 0 1px 2px #000;
+                        white-space: nowrap;
+                        max-width: 50px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      ">${district.name}</div>
+                    </div>
+                  </div>
+                `,
+                iconSize:   [isSelected ? 56 : 44, isSelected ? 56 : 44],
+                iconAnchor: [isSelected ? 28 : 22, isSelected ? 28 : 22],
+              });
+
+              return (
+                <Marker
+                  key={district.id}
+                  position={[district.lat, district.lng]}
+                  icon={icon}
+                  eventHandlers={{ click: () => setSelected(district) }}
+                >
+                  <Popup maxWidth={260}>
+                    <DistrictPopup district={district} />
+                  </Popup>
+                </Marker>
+              );
+            })}
         </MapContainer>
 
-        {/* Risk legend */}
-        <div className="absolute bottom-4 left-4 z-[1000] glass-card px-4 py-3 text-xs space-y-1.5">
-          <div className="text-surface-400 font-medium mb-2 uppercase tracking-wider text-[10px]">
-            Risk Legend
+        {/* Temperature scale legend */}
+        <div className="absolute bottom-10 left-4 z-[1000] glass-card px-4 py-3 min-w-[200px]">
+          <div className="text-surface-400 font-medium mb-2 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+            <Thermometer className="w-3 h-3 text-heat-400" />
+            Surface Temperature
           </div>
-          {(['Low', 'Moderate', 'High', 'Extreme'] as const).map((level) => {
-            const cfg = riskConfig[level];
-            return (
-              <div key={level} className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
-                <span className={cfg.text}>{level}</span>
-              </div>
-            );
-          })}
+          <div
+            className="h-3 rounded-full mb-1.5 w-full"
+            style={{ background: 'linear-gradient(to right, #4575b4, #74add1, #abd9e9, #e0f3f8, #ffffbf, #fee090, #fdae61, #f46d43, #d73027, #a50026)' }}
+          />
+          <div className="flex justify-between text-[10px] text-surface-600 font-mono mt-0.5">
+            <span>-40°</span>
+            <span>0°</span>
+            <span>20°</span>
+            <span>40°+</span>
+          </div>
         </div>
 
         {/* Header bar */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] glass-card px-4 py-2 flex items-center gap-3">
-          <Thermometer className="w-4 h-4 text-heat-400" />
-          <span className="text-sm font-medium text-heat-200">West Bengal Heat Map</span>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] glass-card px-4 py-2 flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Thermometer className="w-4 h-4 text-heat-400" />
+            <span className="text-sm font-medium text-heat-200">West Bengal Heat Map</span>
+          </div>
+          {!loading && districts.filter(d => d.temperature !== undefined).length > 0 && (() => {
+            const temps = districts.filter(d => d.temperature !== undefined).map(d => d.temperature!);
+            const avg = Math.round(temps.reduce((a, b) => a + b, 0) / temps.length);
+            const max = Math.max(...temps);
+            const min = Math.min(...temps);
+            return (
+              <>
+                <div className="h-4 w-px bg-surface-700" />
+                <span className="text-[11px] font-mono text-emerald-400">↓ {min}°C</span>
+                <span className="text-[11px] font-mono text-amber-400">~ {avg}°C</span>
+                <span className="text-[11px] font-mono text-red-400">↑ {max}°C</span>
+              </>
+            );
+          })()}
+          {lastFetch && (
+            <div className="h-4 w-px bg-surface-700" />
+          )}
           {lastFetch && (
             <span className="text-[10px] text-surface-500">
-              · Updated {lastFetch.toLocaleTimeString()}
+              Updated {lastFetch.toLocaleTimeString()}
             </span>
           )}
           <button
             onClick={fetchAll}
             disabled={loading}
-            className="ml-1 p-1 rounded hover:bg-surface-700/60 transition-colors disabled:opacity-40"
+            className="p-1 rounded hover:bg-surface-700/60 transition-colors disabled:opacity-40"
             title="Refresh"
           >
             <RefreshCw className={`w-3 h-3 text-surface-400 ${loading ? 'animate-spin' : ''}`} />
