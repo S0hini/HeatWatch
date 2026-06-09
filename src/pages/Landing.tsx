@@ -111,23 +111,11 @@ export default function Landing() {
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {[
-              { name: 'Howrah', temp: '42°C', color: 'text-red-400 border-red-600/30 bg-red-600/10' },
-              { name: 'Esplanade', temp: '39°C', color: 'text-orange-400 border-orange-600/30 bg-orange-600/10' },
-              { name: 'Park Street', temp: '38°C', color: 'text-orange-400 border-orange-600/30 bg-orange-600/10' },
-              { name: 'Salt Lake', temp: '36°C', color: 'text-amber-400 border-amber-600/30 bg-amber-600/10' },
-              { name: 'New Town', temp: '35°C', color: 'text-emerald-400 border-emerald-600/30 bg-emerald-600/10' },
-            ].map(({ name, temp, color }) => (
-              <span key={name} className={`text-xs font-medium px-3 py-1.5 rounded-full border ${color}`}>
-                {name} · {temp}
-              </span>
-            ))}
-          </div>
+
         </div>
 
         <div className="relative z-10 text-xs text-surface-600">
-          Data updated every 30 minutes · Kolkata Metropolitan Area
+          Data updated every 30 minutes
         </div>
       </div>
 
