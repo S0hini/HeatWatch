@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Search,
   X,
+  Info,
 } from 'lucide-react';
 import {
   LineChart,
@@ -38,6 +39,7 @@ interface CityWeather {
   uvIndex: number;
   description: string;
   risk: RiskLevel;
+  riskReason: string;
   color: string;
 }
 
@@ -49,7 +51,7 @@ interface HourlyPoint {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const OWM_KEY = import.meta.env.VITE_OWM_API_KEY ?? '';
-const ROTATE_MS = 5000; // 5 seconds between city rotations
+const ROTATE_MS = 5000;
 
 export const riskConfig: Record<RiskLevel, { bg: string; border: string; text: string; dot: string; hex: string }> = {
   Low:      { bg: 'bg-emerald-950/60', border: 'border-emerald-700/60', text: 'text-emerald-400', dot: 'bg-emerald-400', hex: '#10b981' },
@@ -58,18 +60,58 @@ export const riskConfig: Record<RiskLevel, { bg: string; border: string; text: s
   Extreme:  { bg: 'bg-red-950/60',     border: 'border-red-700/60',     text: 'text-red-400',     dot: 'bg-red-400',     hex: '#dc2626' },
 };
 
-function getRisk(temp: number): RiskLevel {
-  if (temp >= 42) return 'Extreme';
-  if (temp >= 38) return 'High';
-  if (temp >= 33) return 'Moderate';
-  return 'Low';
+// ── XAI: Risk classification with transparent reasoning ───────────────────────
+function getRisk(
+  temp: number,
+  feelsLike?: number,
+  humidity?: number
+): { level: RiskLevel; reason: string; color: string } {
+  const hi  = feelsLike ?? temp;
+  const hum = humidity ?? 0;
+
+  let level: RiskLevel;
+  if (temp >= 42)      level = 'Extreme';
+  else if (temp >= 38) level = 'High';
+  else if (temp >= 33) level = 'Moderate';
+  else                 level = 'Low';
+
+  const factors: string[] = [];
+
+  // Primary factor: temperature threshold
+  if (temp >= 42)
+    factors.push(`Temp ${temp}°C ≥ 42°C (Extreme threshold)`);
+  else if (temp >= 38)
+    factors.push(`Temp ${temp}°C ≥ 38°C (High threshold)`);
+  else if (temp >= 33)
+    factors.push(`Temp ${temp}°C ≥ 33°C (Moderate threshold)`);
+  else
+    factors.push(`Temp ${temp}°C < 33°C (Safe range)`);
+
+  // Secondary factor: humidity
+  if (hum >= 70)
+    factors.push(`Humidity ${hum}% — high, amplifies heat stress significantly`);
+  else if (hum >= 50)
+    factors.push(`Humidity ${hum}% — moderate, some added discomfort`);
+  else if (hum > 0)
+    factors.push(`Humidity ${hum}% — low, minimal added stress`);
+
+  // Tertiary factor: feels-like delta
+  const delta = hi - temp;
+  if (delta >= 6)
+    factors.push(`Feels like ${hi}°C (+${delta}°C above actual — humidity effect)`);
+  else if (delta >= 3)
+    factors.push(`Feels like ${hi}°C (+${delta}°C above actual)`);
+  else if (hi !== temp)
+    factors.push(`Feels like ${hi}°C (close to actual temp)`);
+
+  return {
+    level,
+    reason: factors.join(' · '),
+    color: riskConfig[level].hex,
+  };
 }
 
-function getRiskColor(risk: RiskLevel): string {
-  return riskConfig[risk].hex;
-}
-
-// ── Hardcoded WB city seed — loads instantly ─────────────────────────────────
+// ── Hardcoded WB city seed ────────────────────────────────────────────────────
 const WB_CITY_SEED: Array<{ name: string; lat: number; lon: number }> = [
   { name: 'Kolkata',         lat: 22.5726, lon: 88.3639 },
   { name: 'Howrah',          lat: 22.5958, lon: 88.2636 },
@@ -103,7 +145,7 @@ const WB_CITY_SEED: Array<{ name: string; lat: number; lon: number }> = [
   { name: 'Bishnupur',       lat: 23.0741, lon: 87.3161 },
 ];
 
-// ── Overpass: fetch more WB cities in background (non-blocking) ───────────────
+// ── Overpass: fetch WB cities in background ───────────────────────────────────
 async function fetchWBCitiesFromOverpass(): Promise<Array<{ name: string; lat: number; lon: number }>> {
   const query = `[out:json][timeout:25];area["name"="West Bengal"]["admin_level"="4"]->.wb;(node["place"~"city|town"]["name"](area.wb););out body;`;
   const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
@@ -125,55 +167,39 @@ async function fetchCityWeather(city: { name: string; lat: number; lon: number }
   const temperature = Math.round(d.main.temp);
   const feelsLike   = Math.round(d.main.feels_like);
   const humidity    = d.main.humidity;
-  const windSpeed   = Math.round((d.wind?.speed ?? 0) * 3.6); // m/s → km/h
+  const windSpeed   = Math.round((d.wind?.speed ?? 0) * 3.6);
   const description = d.weather?.[0]?.description ?? '';
-  const risk        = getRisk(temperature);
-  const color       = getRiskColor(risk);
+  const clouds      = d.clouds?.all ?? 0;
+  const uvIndex     = Math.round(Math.max(0, (10 - clouds / 12) * (temperature > 30 ? 1.1 : 0.85)));
 
-  // UV index not in free current weather — use proxy from cloud cover & time
-  const clouds  = d.clouds?.all ?? 0;
-  const uvIndex = Math.round(Math.max(0, (10 - clouds / 12) * (temperature > 30 ? 1.1 : 0.85)));
+  const { level: risk, reason: riskReason, color } = getRisk(temperature, feelsLike, humidity);
 
-  return { name: city.name, lat: city.lat, lon: city.lon, temperature, feelsLike, humidity, windSpeed, uvIndex, description, risk, color };
+  return { name: city.name, lat: city.lat, lon: city.lon, temperature, feelsLike, humidity, windSpeed, uvIndex, description, risk, riskReason, color };
 }
 
-// ── OWM: hourly forecast for user's location ─────────────────────────────────
+// ── OWM: hourly forecast ──────────────────────────────────────────────────────
 async function fetchHourlyForecast(lat: number, lon: number): Promise<HourlyPoint[]> {
-  // Prefer One Call API 3.0 for true hourly data (next 48 h, 24 shown)
   try {
     const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric&exclude=current,minutely,daily,alerts`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`OWM One Call ${res.status}`);
     const d = await res.json();
-
-    // Show next 24 hourly slots
     const slots: any[] = (d.hourly ?? []).slice(0, 24);
     if (!slots.length) throw new Error('No hourly slots');
-
     return slots.map((item: any) => {
       const dt   = new Date(item.dt * 1000);
       const hour = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-      return {
-        hour,
-        temp:      Math.round(item.temp),
-        feelsLike: Math.round(item.feels_like),
-      };
+      return { hour, temp: Math.round(item.temp), feelsLike: Math.round(item.feels_like) };
     });
   } catch {
-    // Fallback: free 5-day / 3-hour forecast (cnt=8 → 24 h at 3-h intervals)
     const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric&cnt=8`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Forecast fetch failed');
     const d = await res.json();
-
     return (d.list as any[]).map((item: any) => {
       const dt   = new Date(item.dt * 1000);
       const hour = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-      return {
-        hour,
-        temp:      Math.round(item.main.temp),
-        feelsLike: Math.round(item.main.feels_like),
-      };
+      return { hour, temp: Math.round(item.main.temp), feelsLike: Math.round(item.main.feels_like) };
     });
   }
 }
@@ -190,10 +216,9 @@ function getUserLocation(): Promise<{ lat: number; lon: number }> {
   });
 }
 
-// ── Reverse geocode via OWM (more reliable than Nominatim for weather context) ─
+// ── Reverse geocode ───────────────────────────────────────────────────────────
 async function reverseGeocode(lat: number, lon: number): Promise<string> {
   try {
-    // OWM reverse geocoding — same API key, very reliable
     const res = await fetch(
       `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OWM_KEY}`
     );
@@ -201,10 +226,8 @@ async function reverseGeocode(lat: number, lon: number): Promise<string> {
     const data = await res.json();
     if (!data?.length) throw new Error('No result');
     const r = data[0];
-    // Prefer local English name, then name
     return r.local_names?.en ?? r.name ?? 'Your Location';
   } catch {
-    // Fallback: Nominatim
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&addressdetails=1`,
@@ -212,107 +235,70 @@ async function reverseGeocode(lat: number, lon: number): Promise<string> {
       );
       const d    = await res.json();
       const addr = d?.address ?? {};
-      return (
-        addr.village ?? addr.town ?? addr.suburb ??
-        addr.city_district ?? addr.city ?? addr.county ?? 'Your Location'
-      );
+      return addr.village ?? addr.town ?? addr.suburb ?? addr.city_district ?? addr.city ?? addr.county ?? 'Your Location';
     } catch {
       return 'Your Location';
     }
   }
 }
 
-// ── OWM: search city by name → geocode → weather ─────────────────────────────
+// ── Search city by name ───────────────────────────────────────────────────────
 async function searchCityByName(query: string): Promise<CityWeather> {
-  // Bias toward India by appending ,IN — tries India first, falls back if not found
   const biasedQuery = query.includes(',') ? query : `${query},IN`;
   const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(biasedQuery)}&limit=5&appid=${OWM_KEY}`;
   const geoRes = await fetch(geoUrl);
   if (!geoRes.ok) throw new Error(`Geocoding error ${geoRes.status}`);
   const geoData = await geoRes.json();
-
-  // Prefer Indian result; fall back to first result
   const indiaResult = geoData.find((r: any) => r.country === 'IN') ?? geoData[0];
   if (!indiaResult) throw new Error(`No results found for "${query}"`);
-
   const { lat, lon } = indiaResult;
-  // Use local English name if available, else the display name
   const name = indiaResult.local_names?.en ?? indiaResult.name;
-  // Step 2: Get weather for those exact coords
   return fetchCityWeather({ name, lat, lon });
 }
 
-// ── Autocomplete via Nominatim — real prefix matching ────────────────────────
+// ── Autocomplete ──────────────────────────────────────────────────────────────
 interface GeoSuggestion { name: string; state?: string; country: string; lat: number; lon: number; displayName: string; }
 
 async function fetchSuggestions(query: string): Promise<GeoSuggestion[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-
   try {
-    // Nominatim /search supports partial name matching and returns structured results
-    // countrycodes=in biases to India; featureType scopes to cities/towns/villages
     const params = new URLSearchParams({
-      q,
-      format: 'json',
-      addressdetails: '1',
-      limit: '8',
-      countrycodes: 'in',
-      featuretype: 'city',   // cities, towns, villages
-      'accept-language': 'en',
-      dedupe: '1',
+      q, format: 'json', addressdetails: '1', limit: '8',
+      countrycodes: 'in', featuretype: 'city', 'accept-language': 'en', dedupe: '1',
     });
     const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
       headers: { 'Accept-Language': 'en' },
     });
     if (!res.ok) throw new Error('Nominatim failed');
     const data: any[] = await res.json();
-
     const seen = new Set<string>();
     const results: GeoSuggestion[] = [];
-
     for (const r of data) {
       const addr  = r.address ?? {};
-      // Best local name: village > town > city_district > city > name
       const name  = addr.village ?? addr.town ?? addr.city_district ?? addr.city ?? r.name;
       const state = addr.state ?? addr.county;
       const key   = `${name}|${state}`;
       if (!name || seen.has(key)) continue;
       seen.add(key);
-      results.push({
-        name,
-        state,
-        country: 'IN',
-        lat: parseFloat(r.lat),
-        lon: parseFloat(r.lon),
-        displayName: [name, state].filter(Boolean).join(', '),
-      });
+      results.push({ name, state, country: 'IN', lat: parseFloat(r.lat), lon: parseFloat(r.lon), displayName: [name, state].filter(Boolean).join(', ') });
     }
     return results.slice(0, 6);
   } catch {
-    // Fallback: OWM geocoding (less good for partial, but better than nothing)
     try {
       const url = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(q + ',IN')}&limit=5&appid=${OWM_KEY}`;
       const res = await fetch(url);
       if (!res.ok) return [];
       const data: any[] = await res.json();
-      return data
-        .filter(r => r.country === 'IN')
-        .map(r => ({
-          name: r.local_names?.en ?? r.name,
-          state: r.state,
-          country: 'IN',
-          lat: r.lat,
-          lon: r.lon,
-          displayName: [r.local_names?.en ?? r.name, r.state].filter(Boolean).join(', '),
-        }));
-    } catch {
-      return [];
-    }
+      return data.filter(r => r.country === 'IN').map(r => ({
+        name: r.local_names?.en ?? r.name, state: r.state, country: 'IN',
+        lat: r.lat, lon: r.lon,
+        displayName: [r.local_names?.en ?? r.name, r.state].filter(Boolean).join(', '),
+      }));
+    } catch { return []; }
   }
 }
 
-// ── OWM: current weather for user's exact GPS coords ─────────────────────────
 async function fetchUserLocationWeather(lat: number, lon: number, name: string): Promise<CityWeather> {
   return fetchCityWeather({ name, lat, lon });
 }
@@ -364,16 +350,20 @@ function StatCard({ icon: Icon, label, value, unit, sub, accent = '#f97316', loa
   );
 }
 
-function HeatBadge({ risk }: { risk: RiskLevel }) {
+// ── HeatBadge with XAI reasoning panel ───────────────────────────────────────
+function HeatBadge({ risk, reason }: { risk: RiskLevel; reason?: string }) {
   const cfg     = riskConfig[risk];
   const pulsing = risk === 'Extreme' || risk === 'High';
+  const factors = reason ? reason.split(' · ') : [];
+
   return (
     <div className="group relative rounded-2xl transition-all duration-300 ease-out hover:-translate-y-[2px]">
       <div className="pointer-events-none absolute -inset-[3px] rounded-2xl opacity-0 blur-2xl transition-opacity duration-300 bg-orange-500/0 group-hover:opacity-100 group-hover:bg-orange-500/25" />
-      <div className="relative flex flex-col items-center justify-center p-8 rounded-2xl overflow-hidden border border-orange-500/25 bg-orange-950/38 backdrop-blur-md">
+      <div className="relative flex flex-col items-center justify-center p-6 rounded-2xl overflow-hidden border border-orange-500/25 bg-orange-950/38 backdrop-blur-md h-full">
         <div className="absolute inset-0 bg-gradient-to-br from-orange-500/18 via-orange-900/10 to-transparent" />
         {pulsing && <div className={`absolute inset-0 ${cfg.bg} animate-pulse-slow rounded-2xl`} />}
-        <div className="relative z-10 flex flex-col items-center gap-3">
+
+        <div className="relative z-10 flex flex-col items-center gap-3 w-full">
           <Thermometer className={`w-10 h-10 ${cfg.text}`} />
           <div>
             <div className="text-center text-xs text-orange-300/60 uppercase tracking-wider mb-1">Heat Risk Level</div>
@@ -386,6 +376,24 @@ function HeatBadge({ risk }: { risk: RiskLevel }) {
             {risk === 'Moderate'&& 'Take precautions'}
             {risk === 'Low'     && 'Conditions safe'}
           </div>
+
+          {/* ── XAI: Transparent reasoning panel ── */}
+          {factors.length > 0 && (
+            <div className="mt-3 w-full rounded-xl bg-black/25 border border-orange-500/15 px-3 py-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Info className="w-3 h-3 text-orange-400/50" />
+                <span className="text-[9px] text-orange-300/50 uppercase tracking-widest font-mono">Why this rating</span>
+              </div>
+              <div className="space-y-1.5">
+                {factors.map((factor, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot} opacity-70`} />
+                    <span className="text-[10px] text-orange-200/65 font-mono leading-relaxed">{factor}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -407,12 +415,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-// ── Ticker strip: last 5 fetched cities, clickable, with ALL button ──────────
+// ── City Ticker ───────────────────────────────────────────────────────────────
 function CityTicker({
-  cities,
-  pinnedCity,
-  onCityClick,
-  onAll,
+  cities, pinnedCity, onCityClick, onAll,
 }: {
   cities: CityWeather[];
   pinnedCity: CityWeather | null;
@@ -420,7 +425,6 @@ function CityTicker({
   onAll: () => void;
 }) {
   if (!cities.length) return null;
-
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none items-center">
       {cities.map((city) => {
@@ -444,13 +448,10 @@ function CityTicker({
           </button>
         );
       })}
-
-      {/* ALL button — visible when a city is pinned */}
       {pinnedCity && (
         <button
           onClick={onAll}
           className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-500/40 bg-orange-500/15 text-orange-300 text-[10px] font-mono uppercase tracking-wider transition-all duration-300 hover:bg-orange-500/25 hover:text-orange-200 active:scale-95"
-          title="Back to auto-rotating overview"
         >
           <X className="w-2.5 h-2.5" />
           All
@@ -460,7 +461,7 @@ function CityTicker({
   );
 }
 
-// ── Zone overview bar — top 5 hottest ────────────────────────────────────────
+// ── Zone Overview ─────────────────────────────────────────────────────────────
 function ZoneOverview({ cities, lastUpdated }: { cities: CityWeather[]; lastUpdated: Date | null }) {
   if (!cities.length) return (
     <div className="flex items-center gap-2 py-4 text-orange-300/40">
@@ -469,7 +470,6 @@ function ZoneOverview({ cities, lastUpdated }: { cities: CityWeather[]; lastUpda
     </div>
   );
 
-  // Top 5 hottest cities only
   const top5 = [...cities].sort((a, b) => b.temperature - a.temperature).slice(0, 5);
 
   return (
@@ -526,31 +526,27 @@ export default function Dashboard() {
   const [error,          setError]          = useState<string | null>(null);
   const [overviewLastUpdated, setOverviewLastUpdated] = useState<Date | null>(null);
 
-  // Search state
-  const [searchQuery,      setSearchQuery]      = useState('');
-  const [searchLoading,    setSearchLoading]    = useState(false);
-  const [searchError,      setSearchError]      = useState<string | null>(null);
-  const [searchedCity,     setSearchedCity]     = useState<CityWeather | null>(null);
-  const [searchedHourly,   setSearchedHourly]   = useState<HourlyPoint[]>([]);
+  const [searchQuery,         setSearchQuery]         = useState('');
+  const [searchLoading,       setSearchLoading]       = useState(false);
+  const [searchError,         setSearchError]         = useState<string | null>(null);
+  const [searchedCity,        setSearchedCity]        = useState<CityWeather | null>(null);
+  const [searchedHourly,      setSearchedHourly]      = useState<HourlyPoint[]>([]);
   const [searchLoadingHourly, setSearchLoadingHourly] = useState(false);
-  const [suggestions,      setSuggestions]      = useState<GeoSuggestion[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [showSuggestions,  setShowSuggestions]  = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [suggestions,         setSuggestions]         = useState<GeoSuggestion[]>([]);
+  const [suggestionsLoading,  setSuggestionsLoading]  = useState(false);
+  const [showSuggestions,     setShowSuggestions]     = useState(false);
+  const searchInputRef    = useRef<HTMLInputElement>(null);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // User location current weather (for header badge)
-  const [userLocWeather,   setUserLocWeather]   = useState<CityWeather | null>(null);
-
-  // Recently fetched cities (last 5, in fetch order) + pinned ticker city
-  const [recentCities,     setRecentCities]     = useState<CityWeather[]>([]);
-  const [pinnedCity,       setPinnedCity]       = useState<CityWeather | null>(null);
-  const [pinnedHourly,     setPinnedHourly]     = useState<HourlyPoint[]>([]);
+  const [userLocWeather,      setUserLocWeather]      = useState<CityWeather | null>(null);
+  const [recentCities,        setRecentCities]        = useState<CityWeather[]>([]);
+  const [pinnedCity,          setPinnedCity]          = useState<CityWeather | null>(null);
+  const [pinnedHourly,        setPinnedHourly]        = useState<HourlyPoint[]>([]);
   const [pinnedHourlyLoading, setPinnedHourlyLoading] = useState(false);
 
-  const fetchedCitiesRef  = useRef<Map<string, CityWeather>>(new Map());
-  const rotateTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cityPoolRef       = useRef<Array<{ name: string; lat: number; lon: number }>>([]);
+  const fetchedCitiesRef = useRef<Map<string, CityWeather>>(new Map());
+  const rotateTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cityPoolRef      = useRef<Array<{ name: string; lat: number; lon: number }>>([]);
 
   // ── Clock ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -558,36 +554,28 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Load cities: seed instantly, then enrich from Overpass in background ────
+  // ── Load cities ────────────────────────────────────────────────────────────
   useEffect(() => {
-    // 1. Use hardcoded seed immediately — zero wait
     const shuffled = [...WB_CITY_SEED].sort(() => Math.random() - 0.5);
     setCityPool(shuffled);
     cityPoolRef.current = shuffled;
     setLoadingCities(false);
 
-    // 2. Background-load Overpass to get more cities; merge without blocking
     fetchWBCitiesFromOverpass().then(overpassCities => {
       const seedNames = new Set(WB_CITY_SEED.map(c => c.name));
       const extra     = overpassCities.filter(c => !seedNames.has(c.name));
       const merged    = [...shuffled, ...extra].sort(() => Math.random() - 0.5);
       setCityPool(merged);
       cityPoolRef.current = merged;
-    }).catch(() => {
-      // Overpass failed — seed is still active, no error shown
-    });
+    }).catch(() => {});
   }, []);
 
-  // ── Fetch weather for a city by index ────────────────────────────────────
+  // ── Fetch weather for a city by index ─────────────────────────────────────
   const fetchCityAtIndex = useCallback(async (idx: number) => {
     const pool = cityPoolRef.current;
     if (!pool.length) return;
-
-    const city = pool[idx % pool.length];
-    const key  = city.name;
-
-    // Use cached if fresh (< 10 min)
-    const cached = fetchedCitiesRef.current.get(key);
+    const city   = pool[idx % pool.length];
+    const cached = fetchedCitiesRef.current.get(city.name);
     if (cached) {
       setActiveCity(cached);
       setCities(prev => {
@@ -600,11 +588,10 @@ export default function Dashboard() {
       });
       return;
     }
-
     setLoadingWeather(true);
     try {
       const weather = await fetchCityWeather(city);
-      fetchedCitiesRef.current.set(key, weather);
+      fetchedCitiesRef.current.set(city.name, weather);
       setActiveCity(weather);
       setCities(prev => {
         const exists = prev.find(c => c.name === weather.name);
@@ -614,9 +601,7 @@ export default function Dashboard() {
         const filtered = prev.filter(c => c.name !== weather.name);
         return [weather, ...filtered].slice(0, 5);
       });
-    } catch {
-      // silently skip failed cities
-    } finally {
+    } catch { /* silently skip */ } finally {
       setLoadingWeather(false);
     }
   }, []);
@@ -624,10 +609,7 @@ export default function Dashboard() {
   // ── 5-second rotation ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!cityPool.length) return;
-
-    // Fetch first city immediately
     fetchCityAtIndex(0);
-
     rotateTimerRef.current = setInterval(() => {
       setActiveIdx(prev => {
         const next = (prev + 1) % cityPool.length;
@@ -635,40 +617,27 @@ export default function Dashboard() {
         return next;
       });
     }, ROTATE_MS);
-
-    return () => {
-      if (rotateTimerRef.current) clearInterval(rotateTimerRef.current);
-    };
+    return () => { if (rotateTimerRef.current) clearInterval(rotateTimerRef.current); };
   }, [cityPool, fetchCityAtIndex]);
 
-  // ── Get user location + hourly forecast ──────────────────────────────────
+  // ── User location + hourly forecast ───────────────────────────────────────
   useEffect(() => {
     (async () => {
       setLoadingHourly(true);
       setLocationDenied(false);
       try {
         const loc = await getUserLocation();
-
-        // Run reverse geocode + current weather + hourly forecast in parallel
         const [locName, weather, hourly] = await Promise.allSettled([
           reverseGeocode(loc.lat, loc.lon),
           fetchUserLocationWeather(loc.lat, loc.lon, 'Your Location'),
           fetchHourlyForecast(loc.lat, loc.lon),
         ]);
-
         const name = locName.status === 'fulfilled' ? locName.value : 'Your Location';
         setUserLocation({ lat: loc.lat, lon: loc.lon, name });
-
-        if (weather.status === 'fulfilled') {
-          // Update name on the weather object to match reverse geocode
-          setUserLocWeather({ ...weather.value, name });
-        }
-
-        if (hourly.status === 'fulfilled') {
-          setHourlyData(hourly.value);
-        }
+        if (weather.status === 'fulfilled') setUserLocWeather({ ...weather.value, name });
+        if (hourly.status === 'fulfilled')  setHourlyData(hourly.value);
       } catch (err: any) {
-        const isDenied = err?.code === 1; // PERMISSION_DENIED
+        const isDenied = err?.code === 1;
         setLocationDenied(isDenied);
         setUserLocation({ lat: 0, lon: 0, name: isDenied ? 'Location denied' : 'Location unavailable' });
         setHourlyData([]);
@@ -678,41 +647,37 @@ export default function Dashboard() {
     })();
   }, [geoRetryCount]);
 
-  // ── Refresh user location weather every 15 minutes ───────────────────────
+  // ── Refresh user location weather every 15 min ────────────────────────────
   useEffect(() => {
-    const FIFTEEN_MIN = 15 * 60 * 1000;
     const id = setInterval(async () => {
       if (!userLocation || userLocation.lat === 0) return;
       try {
         const w = await fetchUserLocationWeather(userLocation.lat, userLocation.lon, userLocation.name);
         setUserLocWeather({ ...w, name: userLocation.name });
       } catch { /* silent */ }
-    }, FIFTEEN_MIN);
+    }, 15 * 60 * 1000);
     return () => clearInterval(id);
   }, [userLocation]);
 
-  // ── Refresh hourly forecast every 2 hours ────────────────────────────────
+  // ── Refresh hourly every 2h ───────────────────────────────────────────────
   useEffect(() => {
-    const TWO_HOURS = 2 * 60 * 60 * 1000;
     const id = setInterval(async () => {
       if (!userLocation || userLocation.lat === 0) return;
       try {
         const hourly = await fetchHourlyForecast(userLocation.lat, userLocation.lon);
         setHourlyData(hourly);
       } catch { /* silent */ }
-    }, TWO_HOURS);
+    }, 2 * 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [userLocation]);
 
-  // ── Refresh overview (top 5) every 2 hours ──────────────────────────────
+  // ── Refresh overview every 2h ─────────────────────────────────────────────
   useEffect(() => {
     if (cities.length > 0) setOverviewLastUpdated(new Date());
   }, [cities]);
 
   useEffect(() => {
-    const TWO_HOURS = 2 * 60 * 60 * 1000;
     const id = setInterval(async () => {
-      // Re-fetch weather for all cached cities to refresh top 5
       const pool = cityPoolRef.current.slice(0, 30);
       const refreshed: CityWeather[] = [];
       for (const city of pool) {
@@ -731,7 +696,7 @@ export default function Dashboard() {
         });
         setOverviewLastUpdated(new Date());
       }
-    }, TWO_HOURS);
+    }, 2 * 60 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -748,7 +713,6 @@ export default function Dashboard() {
     try {
       const weather = await searchCityByName(query);
       setSearchedCity(weather);
-      // Also fetch hourly for the searched city
       setSearchLoadingHourly(true);
       try {
         const hourly = await fetchHourlyForecast(weather.lat, weather.lon);
@@ -772,27 +736,18 @@ export default function Dashboard() {
     setShowSuggestions(false);
   }, []);
 
-  // ── Autocomplete: debounce input → fetch suggestions ──────────────────────
   const handleSearchInput = useCallback((value: string) => {
     setSearchQuery(value);
     setSearchError(null);
     if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-    if (value.trim().length < 2) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
+    if (value.trim().length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
     setSuggestionsLoading(true);
     setShowSuggestions(true);
     suggestDebounceRef.current = setTimeout(async () => {
       try {
         const results = await fetchSuggestions(value);
         setSuggestions(results);
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setSuggestionsLoading(false);
-      }
+      } catch { setSuggestions([]); } finally { setSuggestionsLoading(false); }
     }, 320);
   }, []);
 
@@ -805,24 +760,18 @@ export default function Dashboard() {
     setSearchedCity(null);
     setSearchedHourly([]);
     try {
-      // Use lat/lon directly from suggestion — no second geocode round-trip
       const weather = await fetchCityWeather({ name: suggestion.name, lat: suggestion.lat, lon: suggestion.lon });
       setSearchedCity(weather);
       setSearchLoadingHourly(true);
       try {
         const hourly = await fetchHourlyForecast(suggestion.lat, suggestion.lon);
         setSearchedHourly(hourly);
-      } catch { /* silent */ } finally {
-        setSearchLoadingHourly(false);
-      }
+      } catch { /* silent */ } finally { setSearchLoadingHourly(false); }
     } catch (e: any) {
       setSearchError(e.message ?? 'Failed to fetch weather');
-    } finally {
-      setSearchLoading(false);
-    }
+    } finally { setSearchLoading(false); }
   }, []);
 
-  // ── Ticker city click: pin that city ─────────────────────────────────────
   const handleTickerCityClick = useCallback(async (city: CityWeather) => {
     setPinnedCity(city);
     setPinnedHourly([]);
@@ -830,31 +779,28 @@ export default function Dashboard() {
     try {
       const hourly = await fetchHourlyForecast(city.lat, city.lon);
       setPinnedHourly(hourly);
-    } catch { /* silent */ } finally {
-      setPinnedHourlyLoading(false);
-    }
+    } catch { /* silent */ } finally { setPinnedHourlyLoading(false); }
   }, []);
 
-  const handleUnpin = useCallback(() => {
-    setPinnedCity(null);
-    setPinnedHourly([]);
-  }, []);
+  const handleUnpin = useCallback(() => { setPinnedCity(null); setPinnedHourly([]); }, []);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const isSearchMode   = searchedCity !== null;
-  const isPinnedMode   = pinnedCity !== null && !isSearchMode;
-  const displayCity    = isSearchMode ? searchedCity : isPinnedMode ? pinnedCity : activeCity;
-  const displayHourly  = isSearchMode ? searchedHourly : isPinnedMode ? pinnedHourly : hourlyData;
+  const isSearchMode  = searchedCity !== null;
+  const isPinnedMode  = pinnedCity !== null && !isSearchMode;
+  const displayCity   = isSearchMode ? searchedCity : isPinnedMode ? pinnedCity : activeCity;
+  const displayHourly = isSearchMode ? searchedHourly : isPinnedMode ? pinnedHourly : hourlyData;
   const displayHourlyLoading = isSearchMode ? searchLoadingHourly : isPinnedMode ? pinnedHourlyLoading : loadingHourly;
 
-  const liveTemp       = displayCity?.temperature ?? null;
-  const liveRisk: RiskLevel = liveTemp !== null ? getRisk(liveTemp) : 'Low';
+  // XAI: compute live risk with full reasoning from display city's live data
+  const liveRiskResult = displayCity
+    ? getRisk(displayCity.temperature, displayCity.feelsLike, displayCity.humidity)
+    : null;
+  const liveRisk: RiskLevel   = liveRiskResult?.level   ?? 'Low';
+  const liveRiskReason: string = liveRiskResult?.reason ?? '';
 
-  // Header badge always shows user's own location temperature
-  const headerTemp     = userLocWeather?.temperature ?? null;
-
-  const timeStr = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = time.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const headerTemp = userLocWeather?.temperature ?? null;
+  const timeStr    = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dateStr    = time.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
     <PremiumBackground>
@@ -868,7 +814,6 @@ export default function Dashboard() {
               <em className="italic text-orange-400/70 text-4xl">UHI Monitor</em>
             </h1>
 
-            {/* City ticker — hide in search mode */}
             {!isSearchMode && (
               <div className="mt-3">
                 {loadingCities && recentCities.length === 0 ? (
@@ -887,17 +832,12 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Search mode pill */}
             {isSearchMode && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-300 text-xs font-mono">
                   <Search className="w-3 h-3" />
                   Showing search result for "{searchQuery}"
-                  <button
-                    onClick={handleExitSearch}
-                    className="ml-1 flex items-center gap-1 hover:text-orange-100 transition-colors"
-                    title="Back to default dashboard"
-                  >
+                  <button onClick={handleExitSearch} className="ml-1 flex items-center gap-1 hover:text-orange-100 transition-colors" title="Back to default dashboard">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -908,12 +848,9 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            {/* Search bar with autocomplete */}
+            {/* Search bar */}
             <div className="relative">
-              <form
-                onSubmit={e => { e.preventDefault(); handleSearch(searchQuery); }}
-                className="flex items-center gap-2"
-              >
+              <form onSubmit={e => { e.preventDefault(); handleSearch(searchQuery); }} className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl focus-within:border-orange-500/50 transition-colors">
                   <Search className="w-3.5 h-3.5 text-orange-400/50 shrink-0" />
                   <input
@@ -964,9 +901,7 @@ export default function Dashboard() {
                             <MapPin className="w-3 h-3 text-orange-400/40 group-hover:text-orange-400/70 shrink-0" />
                             <div className="flex-1 min-w-0">
                               <div className="text-[13px] text-heat-100 font-mono truncate">{s.name}</div>
-                              {s.state && (
-                                <div className="text-[10px] text-orange-300/35 font-mono truncate">{s.state} · IN</div>
-                              )}
+                              {s.state && <div className="text-[10px] text-orange-300/35 font-mono truncate">{s.state} · IN</div>}
                             </div>
                           </button>
                         </li>
@@ -984,16 +919,12 @@ export default function Dashboard() {
                 <Clock className="w-3.5 h-3.5 text-orange-400/70" />
                 <span className="font-mono text-heat-100 text-[13px]">{timeStr}</span>
               </div>
-
-              {/* Location pill — always shows user's own location */}
               <div className="flex items-center gap-2 bg-[#1d1212]/65 border border-orange-500/20 rounded-xl px-3.5 py-2 backdrop-blur-xl">
                 <MapPin className="w-3.5 h-3.5 text-orange-400/70" />
                 <span className="font-mono text-heat-100 text-[11px] uppercase tracking-wider">
                   {userLocation && userLocation.lat !== 0 ? userLocation.name : 'Locating…'}
                 </span>
               </div>
-
-              {/* Temp badge — always shows user's current location temp */}
               <div className="flex items-center gap-2 bg-orange-500/16 border border-orange-500/30 rounded-xl px-3.5 py-2 backdrop-blur-xl">
                 {!userLocWeather && userLocation === null
                   ? <Loader2 className="w-3.5 h-3.5 text-orange-400 animate-spin" />
@@ -1019,17 +950,15 @@ export default function Dashboard() {
         <div className="mono-label mb-4 text-orange-400/70">
           01 — Current Conditions · {displayCity?.name ?? '…'}
           {isPinnedMode && <span className="ml-2 text-orange-300/30">(pinned · click All to resume)</span>}
-          {displayCity && (
-            <span className="ml-3 capitalize text-orange-300/40">{displayCity.description}</span>
-          )}
+          {displayCity && <span className="ml-3 capitalize text-orange-300/40">{displayCity.description}</span>}
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
-          <StatCard icon={Thermometer}  label="Temperature" value={String(liveTemp ?? '—')}                  unit="°C" sub={`${liveRisk} risk zone`}   accent="#f97316" loading={isSearchMode ? searchLoading : loadingWeather} />
-          <StatCard icon={Activity}     label="Feels Like"  value={String(displayCity?.feelsLike ?? '—')}    unit="°C" sub="Heat index adjusted"         accent="#ef4444" loading={isSearchMode ? searchLoading : loadingWeather} />
-          <StatCard icon={Droplets}     label="Humidity"    value={String(displayCity?.humidity ?? '—')}     unit="%"  sub="Relative humidity"            accent="#60a5fa" loading={isSearchMode ? searchLoading : loadingWeather} />
-          <StatCard icon={Sun}          label="UV Index"    value={String(displayCity?.uvIndex ?? '—')}      unit="/11" sub="Cloud-adjusted estimate"     accent="#fbbf24" loading={isSearchMode ? searchLoading : loadingWeather} />
-          <StatCard icon={Wind}         label="Wind Speed"  value={String(displayCity?.windSpeed ?? '—')}    unit="km/h" sub="Surface wind"              accent="#34d399" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Thermometer} label="Temperature" value={String(displayCity?.temperature ?? '—')} unit="°C" sub={`${liveRisk} risk zone`}    accent="#f97316" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Activity}    label="Feels Like"  value={String(displayCity?.feelsLike    ?? '—')} unit="°C" sub="Heat index adjusted"        accent="#ef4444" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Droplets}    label="Humidity"    value={String(displayCity?.humidity      ?? '—')} unit="%"  sub="Relative humidity"           accent="#60a5fa" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Sun}         label="UV Index"    value={String(displayCity?.uvIndex       ?? '—')} unit="/11" sub="Cloud-adjusted estimate"    accent="#fbbf24" loading={isSearchMode ? searchLoading : loadingWeather} />
+          <StatCard icon={Wind}        label="Wind Speed"  value={String(displayCity?.windSpeed     ?? '—')} unit="km/h" sub="Surface wind"             accent="#34d399" loading={isSearchMode ? searchLoading : loadingWeather} />
         </div>
 
         {/* ── 02 Hourly Forecast ── */}
@@ -1104,7 +1033,8 @@ export default function Dashboard() {
             )}
           </PremiumCard>
 
-          <HeatBadge risk={liveRisk} />
+          {/* HeatBadge now receives live risk reason for XAI display */}
+          <HeatBadge risk={liveRisk} reason={liveRiskReason} />
         </div>
 
         {/* ── 03 City Temperature Overview ── */}

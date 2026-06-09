@@ -1,0 +1,129 @@
+<svg width="100%" viewBox="0 0 680 540" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: system-ui, -apple-system, sans-serif; fill: #3d3d3a; }
+      .th  { font-size: 13px; font-weight: 600; }
+      .ts  { font-size: 11px; fill: #5F5E5A; }
+      .tl  { font-size: 12px; font-weight: 500; fill: #3d3d3a; }
+      .box-teal   { fill: #E1F5EE; stroke: #0F6E56; }
+      .box-amber  { fill: #FAEEDA; stroke: #854F0B; }
+      .box-blue   { fill: #E6F1FB; stroke: #185FA5; }
+      .box-coral  { fill: #FAECE7; stroke: #993C1D; }
+      .box-gray   { fill: #F1EFE8; stroke: #5F5E5A; }
+      .text-teal  { fill: #085041; }
+      .text-amber { fill: #633806; }
+      .text-blue  { fill: #0C447C; }
+      .text-coral { fill: #712B13; }
+      .text-gray  { fill: #444441; }
+      .arr { stroke: #888780; stroke-width: 1px; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <!-- Row 1: User triggers -->
+  <text class="tl" x="40" y="30">1 — User triggers</text>
+  <rect class="box-gray" x="40" y="40" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-gray" x="100" y="58" text-anchor="middle">Page load</text>
+  <text class="ts text-gray" x="100" y="75" text-anchor="middle">App starts</text>
+
+  <rect class="box-gray" x="174" y="40" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-gray" x="234" y="58" text-anchor="middle">GPS request</text>
+  <text class="ts text-gray" x="234" y="75" text-anchor="middle">User grants location</text>
+
+  <rect class="box-gray" x="308" y="40" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-gray" x="368" y="58" text-anchor="middle">City search</text>
+  <text class="ts text-gray" x="368" y="75" text-anchor="middle">User types query</text>
+
+  <rect class="box-gray" x="442" y="40" width="198" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-gray" x="541" y="58" text-anchor="middle">Login / sign-up</text>
+  <text class="ts text-gray" x="541" y="75" text-anchor="middle">Firebase Auth</text>
+
+  <!-- Arrows 1→2 -->
+  <line class="arr" x1="100" y1="84" x2="100" y2="144"/>
+  <line class="arr" x1="234" y1="84" x2="234" y2="144"/>
+  <line class="arr" x1="368" y1="84" x2="368" y2="144"/>
+  <line class="arr" x1="541" y1="84" x2="541" y2="144"/>
+
+  <!-- Row 2: API calls -->
+  <text class="tl" x="40" y="136">2 — API calls</text>
+  <rect class="box-blue" x="40" y="144" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-blue" x="100" y="162" text-anchor="middle">OWM current</text>
+  <text class="ts text-blue" x="100" y="179" text-anchor="middle">30 WB city seeds</text>
+
+  <rect class="box-blue" x="174" y="144" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-blue" x="234" y="162" text-anchor="middle">OWM One Call</text>
+  <text class="ts text-blue" x="234" y="179" text-anchor="middle">48h hourly forecast</text>
+
+  <rect class="box-blue" x="308" y="144" width="120" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-blue" x="368" y="162" text-anchor="middle">Nominatim</text>
+  <text class="ts text-blue" x="368" y="179" text-anchor="middle">Geocode + suggest</text>
+
+  <rect class="box-coral" x="442" y="144" width="198" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-coral" x="541" y="162" text-anchor="middle">Firebase Auth</text>
+  <text class="ts text-coral" x="541" y="179" text-anchor="middle">Token issued</text>
+
+  <!-- Arrows 2→3 -->
+  <line class="arr" x1="100" y1="188" x2="220" y2="258"/>
+  <line class="arr" x1="234" y1="188" x2="234" y2="258"/>
+  <line class="arr" x1="368" y1="188" x2="300" y2="258"/>
+  <line class="arr" x1="541" y1="188" x2="541" y2="258"/>
+
+  <!-- Row 3: Processing -->
+  <text class="tl" x="40" y="250">3 — Processing</text>
+  <rect class="box-amber" x="40" y="258" width="380" height="56" rx="6" stroke-width="0.5"/>
+  <text class="th text-amber" x="230" y="278" text-anchor="middle">XAI risk engine — getRisk(temp, feelsLike, humidity)</text>
+  <text class="ts text-amber" x="230" y="298" text-anchor="middle">Classifies Low / Moderate / High / Extreme + outputs human-readable reason</text>
+
+  <rect class="box-coral" x="436" y="258" width="204" height="56" rx="6" stroke-width="0.5"/>
+  <text class="th text-coral" x="538" y="278" text-anchor="middle">AuthContext</text>
+  <text class="ts text-coral" x="538" y="298" text-anchor="middle">Stores session, guards routes</text>
+
+  <!-- Arrows 3→4 -->
+  <line class="arr" x1="230" y1="314" x2="230" y2="374"/>
+  <line class="arr" x1="538" y1="314" x2="538" y2="374"/>
+
+  <!-- Row 4: State update -->
+  <text class="tl" x="40" y="366">4 — State update</text>
+  <rect class="box-teal" x="40" y="374" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="100" y="394" text-anchor="middle">activeCity</text>
+  <text class="ts text-teal" x="100" y="412" text-anchor="middle">Rotates every 5s</text>
+
+  <rect class="box-teal" x="174" y="374" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="234" y="394" text-anchor="middle">hourlyData</text>
+  <text class="ts text-teal" x="234" y="412" text-anchor="middle">24 slots, refresh 2h</text>
+
+  <rect class="box-amber" x="308" y="374" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th text-amber" x="368" y="394" text-anchor="middle">liveRisk</text>
+  <text class="ts text-amber" x="368" y="412" text-anchor="middle">+ reason string</text>
+
+  <rect class="box-coral" x="442" y="374" width="198" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th text-coral" x="541" y="394" text-anchor="middle">user session</text>
+  <text class="ts text-coral" x="541" y="412" text-anchor="middle">Protected routes</text>
+
+  <!-- Arrows 4→5 -->
+  <line class="arr" x1="230" y1="426" x2="230" y2="470"/>
+
+  <!-- Row 5: UI render -->
+  <text class="tl" x="40" y="462">5 — UI render</text>
+  <rect class="box-teal" x="40" y="470" width="106" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="93" y="488" text-anchor="middle">Stat cards</text>
+  <text class="ts text-teal" x="93" y="505" text-anchor="middle">Temp, humidity…</text>
+
+  <rect class="box-teal" x="158" y="470" width="106" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="211" y="488" text-anchor="middle">Hourly chart</text>
+  <text class="ts text-teal" x="211" y="505" text-anchor="middle">Recharts</text>
+
+  <rect class="box-amber" x="276" y="470" width="116" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-amber" x="334" y="488" text-anchor="middle">XAI HeatBadge</text>
+  <text class="ts text-amber" x="334" y="505" text-anchor="middle">Risk + why rating</text>
+
+  <rect class="box-teal" x="404" y="470" width="116" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="462" y="488" text-anchor="middle">Zone overview</text>
+  <text class="ts text-teal" x="462" y="505" text-anchor="middle">Top 5 hottest</text>
+
+  <rect class="box-teal" x="532" y="470" width="108" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th text-teal" x="586" y="488" text-anchor="middle">Map · Recs</text>
+  <text class="ts text-teal" x="586" y="505" text-anchor="middle">Leaflet · GPS tips</text>
+</svg>
