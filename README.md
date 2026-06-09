@@ -1,155 +1,132 @@
-# 🌡️ HeatWatch — AI-Powered Heatwave Intelligence & Early Warning Platform
+# 🌡️ HeatWatch — Urban Heat Island Monitor
 
-HeatWatch is a next-generation climate intelligence platform designed to monitor, analyze, and visualize heatwave conditions in real time. By combining live meteorological data, geospatial visualization, and predictive risk assessment, HeatWatch aims to provide actionable insights that help individuals, organizations, and authorities prepare for extreme heat events before they become public health emergencies.
+HeatWatch is a real-time Urban Heat Island (UHI) monitoring dashboard for West Bengal, India. It collects live meteorological data from 30+ cities via the OpenWeather API, classifies heat risk using a transparent Explainable AI (XAI) engine, and delivers actionable recommendations based on the user's GPS location — helping individuals and communities prepare for extreme heat events before they become public health emergencies.
 
-As climate change continues to increase the frequency and severity of heatwaves worldwide, HeatWatch serves as a digital early-warning system that transforms raw weather data into meaningful, decision-ready information.
+Built as part of the **SAAYA Internship Program – Technical Assignment (Round 2)** by Harit Vikas Technologies Pvt. Ltd.
+
+> **Live Demo:** [heatwatch.vercel.app](https://heatwatch.vercel.app) &nbsp;|&nbsp; **GitHub:** [github.com/S0hini/HeatWatch](https://github.com/S0hini/HeatWatch)
 
 ---
 
-## 🚀 Vision
+## 📸 Screenshots
 
-To build an intelligent heatwave monitoring ecosystem capable of detecting emerging heat risks, forecasting dangerous conditions, and empowering communities with timely alerts and data-driven recommendations.
+> _Add screenshots of your deployed app below. Recommended: Landing page, Dashboard, ZoneMap, Analysis, Recommendations._
+
+| Landing & Auth | Dashboard |
+|---|---|
+| ![Landing](docs/screenshots/landing.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+
+| Zone Map | Analysis |
+|---|---|
+| ![ZoneMap](docs/screenshots/zonemap.png) | ![Analysis](docs/screenshots/analysis.png) |
+
+| Recommendations | XAI Risk Badge |
+|---|---|
+| ![Recommendations](docs/screenshots/recommendations.png) | ![XAI Badge](docs/screenshots/xai-badge.png) |
 
 ---
 
 ## ✨ Key Features
 
-### 🔥 Real-Time Heatwave Monitoring
+- **Live weather data** for 30+ West Bengal cities via OpenWeather API, auto-rotating every 5 seconds
+- **XAI risk engine** — classifies heat risk (Low / Moderate / High / Extreme) and explains *why* in plain language using temperature, humidity, and feels-like delta
+- **GPS-based recommendations** — detects the user's location and provides personalised cooling tips and nearest cooling centres via Overpass API
+- **Hourly forecast chart** — 24-hour temperature and feels-like trend using OpenWeather One Call API
+- **Interactive zone map** — Leaflet-powered geospatial heat zone visualisation across Kolkata's districts
+- **Multi-city analysis** — compare weather metrics across cities with bar charts, radar charts, and heat index tables
+- **Historical trend data** — UHI intensity trends from 2000–2026
+- **Firebase Authentication** — email/password and Google OAuth (Bonus Challenge)
+- **City search with autocomplete** — Nominatim-powered typeahead for any Indian city
 
-* Live temperature tracking
-* Feels-like temperature analysis
-* Humidity and wind monitoring
-* Dynamic weather condition updates
+---
 
-### 📊 Heat Risk Intelligence Engine
+## 🧠 Explainable AI (XAI)
 
-* Automated heat-risk classification
-* Multi-level alert generation
-* Heat severity indicators
-* Context-aware warning system
+HeatWatch implements a transparent risk classification engine (`getRisk`) that surfaces its decision logic directly to the user. Rather than displaying a risk badge alone, the dashboard shows a **"Why this rating"** panel listing every factor that contributed to the classification:
 
-### 🗺️ Interactive Geospatial Dashboard
+```
+🔴 EXTREME
+Why this rating:
+• Temp 42°C ≥ 42°C (Extreme threshold)
+• Humidity 68% — high, amplifies heat stress significantly
+• Feels like 49°C (+7°C above actual — humidity effect)
+```
 
-* Real-time weather visualization
-* Interactive location-based monitoring
-* Regional heat distribution mapping
-* Geographic risk exploration
-
-### 📈 Advanced Data Analytics
-
-* Historical trend visualization
-* Weather pattern analysis
-* Interactive charts and insights
-* Climate data exploration
-
-### 🔐 Secure User Experience
-
-* Firebase Authentication
-* Personalized monitoring experience
-* Secure access management
-
-### 📱 Responsive Design
-
-* Mobile-friendly interface
-* Cross-platform accessibility
-* Optimized user experience
+This directly addresses the XAI principles of **transparency** and **explainability** discussed in the theoretical section — the model's reasoning is visible, auditable, and human-readable at every step.
 
 ---
 
 ## 🏗️ System Architecture
 
-```text
-User Interface (React + TypeScript)
-            │
-            ▼
-Weather Data Layer
-            │
-            ▼
-Heat Risk Analysis Engine
-            │
-            ▼
-Visualization & Alert System
-            │
-            ▼
-Firebase Authentication & Services
-```
+![System Architecture](docs/architecture.svg)
+
+### Layers
+
+| Layer | Components |
+|---|---|
+| **Frontend** | React · TypeScript · Vite · Tailwind CSS · React Router |
+| **XAI Engine** | `getRisk(temp, feelsLike, humidity)` — transparent risk classifier |
+| **Visualisation** | Recharts (charts) · Leaflet (maps) |
+| **External APIs** | OpenWeather API · Nominatim · Browser GPS · Overpass (OSM) |
+| **Auth / State** | Firebase Auth · AuthContext · ZoneContext |
+| **Deployment** | Vercel |
 
 ---
 
-## 💡 Innovation Highlights
+## 🔄 Data Flow
 
-### Intelligent Heat Risk Assessment
+![Data Flow](docs/dataflow.svg)
 
-HeatWatch goes beyond displaying weather metrics by interpreting environmental conditions and translating them into actionable heat-risk levels.
-
-### Climate-Tech Focus
-
-Unlike traditional weather applications, HeatWatch is specifically designed to address one of the fastest-growing climate challenges: extreme heat events and their impact on public health.
-
-### Data-to-Decision Workflow
-
-The platform converts complex weather information into understandable insights, enabling faster decision-making for users and stakeholders.
-
-### Scalable Early Warning Framework
-
-The architecture is designed to support future integration with:
-
-* AI-based heatwave prediction models
-* Satellite weather feeds
-* Public alert systems
-* Disaster management platforms
-* Smart city infrastructure
+1. **User trigger** — page load, GPS grant, city search, or login
+2. **API call** — OpenWeather fetches live conditions; Nominatim geocodes; Firebase issues auth token
+3. **XAI processing** — `getRisk()` classifies risk level and generates a human-readable reason string
+4. **State update** — React state stores `activeCity`, `hourlyData`, `liveRisk`, `reason`, and `userSession`
+5. **UI render** — stat cards, hourly chart, XAI HeatBadge, zone overview, and map update reactively
 
 ---
 
 ## 🛠️ Technology Stack
 
 ### Frontend
+- React 18 · TypeScript · Vite
+- React Router DOM
+- Tailwind CSS
 
-* React
-* TypeScript
-* Vite
-* React Router DOM
+### Data & APIs
+- OpenWeather API 2.5 / 3.0 (current weather + One Call hourly forecast)
+- Nominatim / OpenStreetMap (geocoding, autocomplete, city discovery)
+- Overpass API (cooling centre locations)
+- Browser Geolocation API (GPS)
 
-### Data Visualization
+### Visualisation
+- Recharts (line charts, bar charts, radar charts)
+- Leaflet + React Leaflet (interactive maps)
 
-* Recharts
-* Leaflet
-* React Leaflet
+### Auth & Backend
+- Firebase Authentication (email/password + Google OAuth)
 
-### Cloud & Authentication
-
-* Firebase Authentication
-* Firebase Services
-
-### UI & Design
-
-* Lucide React
-* Responsive Component Architecture
+### Deployment
+- Vercel
 
 ---
 
 ## ⚙️ Getting Started
 
-### Clone Repository
+### Clone & Install
 
 ```bash
 git clone https://github.com/S0hini/HeatWatch.git
 cd HeatWatch
-```
-
-### Install Dependencies
-
-```bash
 npm install
 ```
 
-### Configure Environment Variables
+### Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root:
 
 ```env
-VITE_FIREBASE_API_KEY=your_api_key
+VITE_OWM_API_KEY=your_openweather_api_key
+VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
@@ -165,59 +142,54 @@ npm run dev
 
 ---
 
-## 🔮 Future Roadmap
+## 🎯 Problem Statement
 
-### AI & Machine Learning
+Urban Heat Islands (UHIs) occur when cities experience significantly higher temperatures than surrounding rural areas due to concrete surfaces, industrial activity, and lack of green cover. West Bengal — especially Kolkata, Howrah, and Durgapur — faces severe UHI effects, with peak summer temperatures regularly exceeding 42°C and heat indices reaching dangerous levels.
 
-* Heatwave forecasting models
-* Predictive climate analytics
-* Risk prediction using historical weather patterns
-
-### Smart Alerts
-
-* Location-based notifications
-* Personalized heat-risk alerts
-* Emergency escalation system
-
-### Public Safety Integration
-
-* Government dashboard integration
-* Disaster management support
-* Community alert networks
-
-### Advanced Climate Intelligence
-
-* Satellite imagery integration
-* Urban heat island analysis
-* Environmental impact assessment
+Existing weather apps show temperature but do not explain risk, do not localise recommendations, and do not track UHI trends over time. HeatWatch addresses all three gaps.
 
 ---
 
-## 🌍 Potential Impact
+## 💡 Proposed Solution
 
-HeatWatch has the potential to support:
+A web-based climate intelligence dashboard that:
+1. Collects live environmental data from 30+ West Bengal cities
+2. Classifies heat risk transparently using an XAI engine
+3. Visualises historical UHI intensity trends (2000–2026)
+4. Delivers GPS-personalised recommendations and cooling centre locations
+5. Secures access via Firebase Authentication
 
-* Public health awareness
-* Climate resilience initiatives
-* Urban planning decisions
-* Disaster preparedness programs
-* Smart city ecosystems
+---
 
-By providing accessible and actionable climate intelligence, HeatWatch contributes toward building safer and more climate-resilient communities.
+## 🌍 Expected Impact
+
+- **Public health** — early warning for at-risk populations (elderly, outdoor workers, children)
+- **Urban planning** — identifies hotspot zones needing green cover or cooling infrastructure
+- **Climate resilience** — historical UHI trend data supports long-term mitigation planning
+- **Community awareness** — plain-language XAI explanations make heat risk accessible to all
+
+---
+
+## 🔮 Future Roadmap
+
+- LSTM-based heatwave forecasting using historical OWM data
+- Push notification alerts for extreme risk zones
+- Government / NDMA dashboard integration
+- Satellite land surface temperature overlay
+- Aadhaar-inspired digital identity for personalised health profiles
 
 ---
 
 ## 👩‍💻 Developer
 
-**Sohini Das**
+**Sohini Das**  
+B.Tech Computer Science & Engineering · Adamas University  
+AI · Full-Stack Development · Computer Vision · Climate-Tech
 
-Computer Science & Engineering Student
-AI • Full-Stack Development • Computer Vision • Climate-Tech
-
-GitHub: https://github.com/S0hini
+GitHub: [github.com/S0hini](https://github.com/S0hini)
 
 ---
 
 ## 📄 License
 
-This project is released for educational, research, and innovation purposes.
+Released for educational, research, and innovation purposes under the SAAYA Internship Program by Harit Vikas Technologies Pvt. Ltd.
